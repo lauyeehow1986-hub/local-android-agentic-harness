@@ -8,6 +8,7 @@ not a rewrite.
 from __future__ import annotations
 
 import json
+import socket
 import urllib.error
 import urllib.request
 from typing import Any, Optional
@@ -26,12 +27,17 @@ class OllamaClient:
         num_ctx: int = 6144,
         temperature: float = 0.2,
         timeout_s: int = 600,
+        num_predict: int = 512,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.num_ctx = num_ctx
         self.temperature = temperature
         self.timeout_s = timeout_s
+        # Hard cap on tokens generated per turn. A single ReAct block is short;
+        # this bounds worst-case decode time so a rambling generation can't burn
+        # the whole timeout at ~3 tok/s.
+        self.num_predict = num_predict
 
     # -- internal ---------------------------------------------------------
     def _post(self, path: str, payload: dict) -> dict:
@@ -61,8 +67,27 @@ class OllamaClient:
             raise OllamaError(
                 f"Ollama returned HTTP {e.code} for {path}: {detail}{hint}"
             ) from e
+        except (TimeoutError, socket.timeout) as e:
+            # The model is decoding slower than request_timeout_s allows (heavy
+            # thermal throttling on this chip). Surface it cleanly, not as a
+            # traceback, with the actionable knobs.
+            raise OllamaError(
+                f"request to Ollama timed out after {self.timeout_s}s — the model is "
+                "decoding very slowly (thermal throttling / RAM pressure). Try a "
+                "smaller model, a lower AGENT_NUM_CTX, the compact prompt, or raise "
+                "AGENT_REQUEST_TIMEOUT."
+            ) from e
         except urllib.error.URLError as e:
+            # urllib wraps connection-level timeouts here too on some platforms.
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, (TimeoutError, socket.timeout)):
+                raise OllamaError(
+                    f"request to Ollama timed out after {self.timeout_s}s "
+                    "(thermal throttling / RAM pressure)."
+                ) from e
             raise OllamaError(f"cannot reach Ollama at {url}: {e}") from e
+        except OSError as e:
+            raise OllamaError(f"network error talking to Ollama at {url}: {e}") from e
         try:
             return json.loads(body)
         except json.JSONDecodeError as e:
@@ -85,6 +110,7 @@ class OllamaClient:
         opts = {
             "num_ctx": self.num_ctx,
             "temperature": self.temperature,
+            "num_predict": self.num_predict,
             # Stop as soon as the model starts hallucinating an OBSERVATION;
             # the parser also guards against this, but stopping early saves
             # precious tokens at ~3 tok/s.

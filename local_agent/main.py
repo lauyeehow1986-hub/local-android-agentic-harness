@@ -27,6 +27,7 @@ def build_agent(config) -> Agent:
         num_ctx=config.num_ctx,
         temperature=config.temperature,
         timeout_s=config.request_timeout_s,
+        num_predict=config.max_new_tokens,
     )
     return Agent(config=config, client=client)
 

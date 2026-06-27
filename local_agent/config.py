@@ -67,9 +67,16 @@ class Config:
     kv_cache_type: str = field(
         default_factory=lambda: _env_str("OLLAMA_KV_CACHE_TYPE", "q8_0")
     )
-    # Decode is ~3 tok/s CPU-only; don't assume cold-start speed. Generous.
+    # Decode is ~3 tok/s CPU-only and throttles under load; don't assume
+    # cold-start speed. Generous, and bumped for the worst case (cold prefill
+    # of a large prompt plus a throttled decode).
     request_timeout_s: int = field(
-        default_factory=lambda: _env_int("AGENT_REQUEST_TIMEOUT", 600)
+        default_factory=lambda: _env_int("AGENT_REQUEST_TIMEOUT", 900)
+    )
+    # Hard cap on tokens generated per turn. One ReAct block is short; this
+    # bounds worst-case decode time so the model can't run away.
+    max_new_tokens: int = field(
+        default_factory=lambda: _env_int("AGENT_MAX_NEW_TOKENS", 512)
     )
 
     # --- Vault ---
