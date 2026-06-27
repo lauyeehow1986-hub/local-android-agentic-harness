@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.env
+*.log
+.local_agent/
+# generated artifacts from make_* tools when run in-repo
+/slides.md
+/report.html
+/screenshot.png

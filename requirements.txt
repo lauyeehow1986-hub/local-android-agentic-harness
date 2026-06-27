@@ -1,0 +1,17 @@
+# Runtime: stdlib-only. The harness talks to Ollama over HTTP via urllib, and
+# all v1 tools (vault, web_search/scrape, generation, shell, git) use the
+# standard library. Keep this lean — Termux/ARM wheels are painful.
+
+# --- Dev / test only ---
+pytest>=7.0
+
+# --- Optional, install only if you enable the heavy tools ---
+# Browser tool (Playwright) — heavy on Termux; typically run on the LAN box:
+#   pip install playwright && playwright install chromium
+# playwright>=1.40
+#
+# Vision (analyze_image) is served by Ollama (pull a small VL model such as
+# `moondream`); no Python package needed here.
+#
+# transcribe uses an external `whisper`/`whisper-cpp` binary on PATH; no
+# Python package required.
