@@ -93,6 +93,10 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 | `AGENT_VISION_KEEP_ALIVE` | `0` | unload vision model immediately (RAM-safe) |
 | `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
 | `AGENT_PDF_OCR_MAX_PAGES` | `5` | pages to render + OCR for scanned PDFs |
+| `AGENT_WHISPER_BACKEND` | `auto` | `auto`/`whisper`/`whispercpp`/`faster` |
+| `AGENT_WHISPER_MODEL` | `base` | model for openai/faster-whisper (tiny…large) |
+| `AGENT_WHISPER_CPP_MODEL` | _(unset)_ | path to a ggml model for whisper.cpp |
+| `AGENT_WHISPER_LANG` | _(auto)_ | language hint, e.g. `en` |
 | `AGENT_ENABLE_BROWSER` | `0` | gate the heavy Playwright tool |
 
 ## Tools
@@ -125,7 +129,14 @@ Optional backends (the harness degrades gracefully without them):
   fallback needs a PDF renderer — `pip install pymupdf` (preferred, no system binary)
   or `pip install pdf2image` + `pkg install poppler` — plus a vision model
   (`ollama pull moondream`).
-- **`transcribe`** — a `whisper` / `whisper-cpp` binary on `PATH`.
+- **`transcribe`** (meeting speech-to-text) — install a Whisper backend, tried in
+  order: **whisper.cpp** (`whisper-cli`/`whisper-cpp`/`main` on PATH + set
+  `AGENT_WHISPER_CPP_MODEL` to a ggml model — best for Termux), **openai-whisper**
+  (`pip install openai-whisper`), or **faster-whisper** (`pip install faster-whisper`).
+  Non-WAV audio (m4a/opus/mp3…) needs **ffmpeg** (`pkg install ffmpeg`) for whisper.cpp;
+  openai-whisper handles formats itself. Saves the full transcript to
+  `<audio>.transcript.txt` and, if you pass a `task`, summarizes / extracts action
+  items with a chunked map-reduce so long meetings fit the small context window.
 
 ## Example prompts (what you can ask at `yh>`)
 
@@ -141,6 +152,8 @@ Optional backends (the harness degrades gracefully without them):
 | "Describe /sdcard/DCIM/Camera/IMG_2026.jpg" | `analyze_image` |
 | "Read all the text in /sdcard/Download/receipt.png" | `analyze_image` (OCR) |
 | "Summarize the PDF at /sdcard/Download/paper.pdf" | `analyze_pdf` (text, or OCR if scanned) |
+| "Transcribe the meeting at /sdcard/Recordings/standup.m4a and list action items" | `transcribe` (task=action items) |
+| "Transcribe …/meeting.m4a and save the notes to my vault" | `transcribe` → `request_approval` → `vault_write` |
 | "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
 | "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
 | "Commit and push my vault" | `request_approval` → `git_sync` |

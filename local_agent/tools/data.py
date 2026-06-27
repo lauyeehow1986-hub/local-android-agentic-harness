@@ -309,34 +309,199 @@ def _analyze_pdf_ocr(p: Path, n_pages: int, task: str, ctx: ToolContext) -> str:
     return f"{note}:\n{excerpt}"
 
 
+_AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".mp4", ".webm"}
+
+
+def _summarize_long(
+    ctx: ToolContext, text: str, task: str, *, chunk_chars: int = 3000, max_chunks: int = 12
+) -> str:
+    """Map-reduce summary so long transcripts fit a small context window.
+
+    Summarize each chunk toward the goal, then summarize the summaries. Bounded
+    by max_chunks so a multi-hour meeting can't spawn unlimited slow model calls.
+    """
+    chunks = [text[i : i + chunk_chars] for i in range(0, len(text), chunk_chars)]
+    truncated = len(chunks) > max_chunks
+    chunks = chunks[:max_chunks]
+    system = "You write terse, structured meeting notes."
+
+    if len(chunks) == 1:
+        return ctx.client.generate(
+            f"{task}\n\nTranscript:\n{chunks[0]}", system=system
+        ).strip()
+
+    partials: list[str] = []
+    for i, c in enumerate(chunks, 1):
+        s = ctx.client.generate(
+            f"Summarize part {i} of a meeting transcript toward this goal: {task}\n\n{c}",
+            system=system,
+        )
+        partials.append(s.strip())
+    combined = "\n".join(partials)
+    final = ctx.client.generate(
+        f"{task}\n\nCombine these partial summaries into one set of notes:\n{combined}",
+        system=system,
+    ).strip()
+    if truncated:
+        final += f"\n[note: only the first {max_chunks} chunks were summarized]"
+    return final
+
+
+def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
+    """Detect a Whisper backend and return the transcript text.
+
+    Backends tried (auto): openai-whisper CLI → whisper.cpp → faster-whisper.
+    Raises RuntimeError('no-backend') if none is available, or
+    RuntimeError('ffmpeg-needed') if whisper.cpp needs WAV but ffmpeg is absent.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    pref = getattr(ctx.config, "whisper_backend", "auto")
+    lang_args_openai = (["--language", language] if language else [])
+
+    # 1) openai-whisper / whisper CLI (handles m4a/etc directly via its own ffmpeg).
+    if pref in ("auto", "whisper"):
+        exe = shutil.which("whisper")
+        if exe:
+            model = getattr(ctx.config, "whisper_model", "base")
+            with tempfile.TemporaryDirectory() as td:
+                subprocess.run(
+                    [exe, str(p), "--model", model, "--output_format", "txt",
+                     "--output_dir", td, "--task", "transcribe", *lang_args_openai],
+                    capture_output=True, text=True, timeout=3600, check=True,
+                )
+                out_txt = Path(td) / (p.stem + ".txt")
+                if out_txt.exists():
+                    return out_txt.read_text(encoding="utf-8", errors="ignore").strip()
+            return ""
+
+    # 2) whisper.cpp — needs a ggml model and a 16k mono WAV.
+    if pref in ("auto", "whispercpp"):
+        exe = next((shutil.which(n) for n in ("whisper-cli", "whisper-cpp", "main") if shutil.which(n)), None)
+        if exe:
+            model = getattr(ctx.config, "whisper_cpp_model", "")
+            if not model:
+                raise RuntimeError("whispercpp-model-needed")
+            wav, tmp_wav = _ensure_wav16k(p)
+            try:
+                with tempfile.TemporaryDirectory() as td:
+                    of = Path(td) / "out"
+                    cmd = [exe, "-m", model, "-f", str(wav), "-otxt", "-of", str(of)]
+                    if language:
+                        cmd += ["-l", language]
+                    subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)
+                    txt = Path(str(of) + ".txt")
+                    return txt.read_text(encoding="utf-8", errors="ignore").strip() if txt.exists() else ""
+            finally:
+                if tmp_wav and tmp_wav.exists():
+                    tmp_wav.unlink()
+
+    # 3) faster-whisper (Python).
+    if pref in ("auto", "faster"):
+        try:
+            from faster_whisper import WhisperModel  # optional dep
+        except ImportError:
+            WhisperModel = None  # type: ignore[assignment]
+        if WhisperModel is not None:
+            model = getattr(ctx.config, "whisper_model", "base")
+            wm = WhisperModel(model, device="cpu", compute_type="int8")
+            segments, _ = wm.transcribe(str(p), language=language or None)
+            return " ".join(seg.text.strip() for seg in segments).strip()
+
+    raise RuntimeError("no-backend")
+
+
+def _ensure_wav16k(p: Path):
+    """Return (wav_path, temp_to_cleanup_or_None). Converts via ffmpeg if needed."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    if p.suffix.lower() == ".wav":
+        return p, None
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        raise RuntimeError("ffmpeg-needed")
+    fd, tmp_name = tempfile.mkstemp(suffix=".wav")
+    import os
+
+    os.close(fd)
+    tmp = Path(tmp_name)
+    subprocess.run(
+        [ff, "-y", "-i", str(p), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(tmp)],
+        capture_output=True, text=True, timeout=1800, check=True,
+    )
+    return tmp, tmp
+
+
 def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Speech-to-text for meetings: transcribe an audio/video file, save the full
+    transcript next to it, and (optionally) summarize / extract action items.
+
+    args: {"path": str, "task": str?, "language": str?}
+      - task: if given (e.g. "summarize decisions and action items"), runs a
+        map-reduce summary over the transcript with the local model.
+      - language: e.g. "en"; omit to auto-detect.
+    """
     path = str(args.get("path", "")).strip()
+    task = str(args.get("task", "")).strip()
+    language = str(args.get("language", "") or getattr(ctx.config, "whisper_language", "")).strip()
     if not path:
         return "error: 'path' is required"
     p = Path(path)
     if not p.exists():
         return f"audio not found: {path}"
-    # Optional backend. Prefer a pure-CLI whisper if present; otherwise report.
-    try:
-        import shutil
-        import subprocess
+    if p.suffix.lower() not in _AUDIO_EXTS:
+        return f"unrecognized audio type: {p.suffix} (expected {', '.join(sorted(_AUDIO_EXTS))})"
 
-        exe = shutil.which("whisper") or shutil.which("whisper-cpp")
-        if exe is None:
+    try:
+        text = _transcribe_audio(p, ctx, language)
+    except RuntimeError as e:
+        kind = str(e)
+        if kind == "no-backend":
             return (
-                "transcribe unavailable: no whisper backend found. Install "
-                "whisper.cpp or openai-whisper to enable."
+                "transcribe unavailable: no speech backend found. Install one: "
+                "whisper.cpp (`pkg install whisper.cpp` or build it; set "
+                "AGENT_WHISPER_CPP_MODEL to a ggml model), or `pip install "
+                "openai-whisper`, or `pip install faster-whisper`. For non-WAV "
+                "audio also install ffmpeg (`pkg install ffmpeg`)."
             )
-        out = subprocess.run(
-            [exe, str(p), "--output_format", "txt"],
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-        text = (out.stdout or "").strip()
-        return text[:2000] if text else f"transcribe produced no text (rc={out.returncode})"
+        if kind == "ffmpeg-needed":
+            return "transcribe needs ffmpeg to convert this audio to WAV: `pkg install ffmpeg`."
+        if kind == "whispercpp-model-needed":
+            return (
+                "whisper.cpp found but no model set. Point AGENT_WHISPER_CPP_MODEL at a "
+                "ggml model file (e.g. ggml-base.en.bin)."
+            )
+        return f"transcribe error: {e}"
     except Exception as e:  # noqa: BLE001
         return f"transcribe error: {e}"
+
+    if not text:
+        return f"transcribe produced no text for {p.name} (silent or unsupported audio?)"
+
+    # Save the full transcript next to the audio — meetings are long; we don't
+    # want the whole thing flooding the model's context as an observation.
+    transcript_path = p.with_suffix(p.suffix + ".transcript.txt")
+    try:
+        transcript_path.write_text(text, encoding="utf-8")
+        saved = f"transcript saved: {transcript_path}"
+    except OSError:
+        saved = "(could not save transcript file)"
+    n_words = len(text.split())
+    header = f"{p.name}: {n_words} words transcribed. {saved}"
+
+    if task and ctx.client is not None:
+        try:
+            summary = _summarize_long(ctx, text, task)
+        except Exception as e:  # noqa: BLE001
+            return f"{header}\n(summary failed: {e}; full transcript is saved)"
+        return f"{header}\n\n{task}:\n{summary}"
+
+    preview = " ".join(text.split())[:800]
+    return f"{header}\nPreview: {preview}…"
 
 
 TOOLS = [
@@ -369,6 +534,7 @@ TOOLS = [
         tag="SAFE",
         fn=transcribe,
         required=("path",),
-        description="Speech-to-text on an audio file.",
+        optional=("task", "language"),
+        description="Transcribe meeting audio; optionally summarize / extract action items.",
     ),
 ]

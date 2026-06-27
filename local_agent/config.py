@@ -87,6 +87,24 @@ class Config:
     pdf_ocr_max_pages: int = field(
         default_factory=lambda: _env_int("AGENT_PDF_OCR_MAX_PAGES", 5)
     )
+
+    # --- Speech-to-text (transcribe) ---
+    # Backend: auto | whisper (openai-whisper CLI) | whispercpp | faster.
+    whisper_backend: str = field(
+        default_factory=lambda: _env_str("AGENT_WHISPER_BACKEND", "auto")
+    )
+    # Model name for openai-whisper / faster-whisper (tiny|base|small|…).
+    whisper_model: str = field(
+        default_factory=lambda: _env_str("AGENT_WHISPER_MODEL", "base")
+    )
+    # Path to a ggml model file when using whisper.cpp (e.g. ggml-base.en.bin).
+    whisper_cpp_model: str = field(
+        default_factory=lambda: _env_str("AGENT_WHISPER_CPP_MODEL", "")
+    )
+    # Language hint (e.g. "en"); empty = auto-detect.
+    whisper_language: str = field(
+        default_factory=lambda: _env_str("AGENT_WHISPER_LANG", "")
+    )
     # num_ctx: keep small or the KV cache OOM-kills on 8 GB. NOT the 256K max.
     num_ctx: int = field(default_factory=lambda: _env_int("AGENT_NUM_CTX", 6144))
     temperature: float = field(

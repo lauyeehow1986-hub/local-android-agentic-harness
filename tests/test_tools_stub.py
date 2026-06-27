@@ -123,6 +123,85 @@ def test_vault_search_no_match(reg, ctx):
     assert "no matches" in out
 
 
+def test_transcribe_writes_sidecar_and_preview(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    audio = tmp_path / "standup.m4a"
+    audio.write_bytes(b"fake-audio")
+
+    monkeypatch.setattr(
+        data, "_transcribe_audio", lambda p, c, lang: "We shipped v10 and agreed to fix the bug."
+    )
+    out = reg["transcribe"].fn({"path": str(audio)}, ctx2)
+    assert "9 words transcribed" in out
+    # Full transcript saved next to the audio.
+    sidecar = audio.with_suffix(audio.suffix + ".transcript.txt")
+    assert sidecar.exists()
+    assert "shipped v10" in sidecar.read_text()
+    assert "Preview:" in out
+
+
+def test_transcribe_with_summary_task(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="Decision: ship. Action: Bob fixes bug.")
+    ctx2 = ToolContext(config=cfg, client=client)
+    audio = tmp_path / "meeting.wav"
+    audio.write_bytes(b"fake")
+
+    monkeypatch.setattr(data, "_transcribe_audio", lambda p, c, lang: "long transcript text")
+    out = reg["transcribe"].fn(
+        {"path": str(audio), "task": "summarize decisions and action items"}, ctx2
+    )
+    assert "Action: Bob fixes bug" in out
+
+
+def test_transcribe_no_backend(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    audio = tmp_path / "rec.mp3"
+    audio.write_bytes(b"x")
+
+    def no_backend(p, c, lang):
+        raise RuntimeError("no-backend")
+
+    monkeypatch.setattr(data, "_transcribe_audio", no_backend)
+    out = reg["transcribe"].fn({"path": str(audio)}, ctx2)
+    assert "no speech backend" in out
+
+
+def test_transcribe_rejects_non_audio(reg, ctx, tmp_path):
+    txt = tmp_path / "note.txt"
+    txt.write_text("hi")
+    out = reg["transcribe"].fn({"path": str(txt)}, ctx)
+    assert "unrecognized audio type" in out
+
+
+def test_summarize_long_map_reduce(monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    client = _CapturingClient(reply="partial/final summary")
+    ctx2 = ToolContext(config=Config(), client=client)
+    long_text = "word " * 4000  # ~20k chars → multiple chunks
+    out = data._summarize_long(ctx2, long_text, "summarize", chunk_chars=3000, max_chunks=4)
+    assert "summary" in out
+
+
 def test_analyze_pdf_missing_file(reg, ctx):
     out = reg["analyze_pdf"].fn({"path": "/nope/x.pdf"}, ctx)
     assert "not found" in out

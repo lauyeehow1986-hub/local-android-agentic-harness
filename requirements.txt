@@ -25,5 +25,9 @@ pytest>=7.0
 #   pip install Pillow
 # Pillow>=10.0
 #
-# transcribe uses an external `whisper`/`whisper-cpp` binary on PATH; no
-# Python package required.
+# transcribe (meeting speech-to-text) — install ONE Whisper backend:
+#   whisper.cpp (best for Termux): whisper-cli/whisper-cpp/main on PATH +
+#     AGENT_WHISPER_CPP_MODEL pointing at a ggml model file
+#   or: pip install openai-whisper
+#   or: pip install faster-whisper
+# Non-WAV audio also needs ffmpeg (`pkg install ffmpeg`).
