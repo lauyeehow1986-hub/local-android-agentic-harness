@@ -170,6 +170,15 @@ class Config:
     enable_browser: bool = field(
         default_factory=lambda: _env_str("AGENT_ENABLE_BROWSER", "0") == "1"
     )
+    # Remote headless Chrome (e.g. a browserless container on the LAN box) for
+    # rendering JS-heavy pages from the phone without a local browser. Used by
+    # web_scrape when render=true.
+    browser_remote_url: str = field(
+        default_factory=lambda: _env_str("AGENT_BROWSER_REMOTE_URL", "")
+    )
+    browser_remote_token: str = field(
+        default_factory=lambda: _env_str("AGENT_BROWSER_REMOTE_TOKEN", "")
+    )
 
     def normalized_autonomy(self) -> str:
         """Coerce autonomy to a known value; default to the safe one."""

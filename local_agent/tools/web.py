@@ -43,18 +43,54 @@ def _html_to_text(raw: str) -> str:
     return raw.strip()
 
 
+def _remote_render(target_url: str, ctx: ToolContext) -> str:
+    """Fetch a JS-rendered page via a remote headless Chrome (browserless).
+
+    POSTs to <AGENT_BROWSER_REMOTE_URL>/content and returns the rendered HTML.
+    Pure stdlib — the heavy browser runs on the LAN box, the phone just drives it.
+    """
+    base = getattr(ctx.config, "browser_remote_url", "").rstrip("/")
+    token = getattr(ctx.config, "browser_remote_token", "")
+    endpoint = f"{base}/content" + (f"?token={token}" if token else "")
+    body = json.dumps({"url": target_url}).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return resp.read().decode("utf-8", errors="ignore")
+
+
 def web_scrape(args: dict[str, Any], ctx: ToolContext) -> str:
     url = str(args.get("url", "")).strip()
+    render = bool(args.get("render", False))
     if not url:
         return "error: 'url' is required"
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    try:
-        raw = _fetch(url)
-    except urllib.error.URLError as e:
-        return f"fetch failed: {e}"
-    except Exception as e:  # noqa: BLE001 - report, don't crash the loop
-        return f"fetch error: {e}"
+
+    if render:
+        # JS-rendered fetch via a remote headless Chrome (LAN box).
+        if not getattr(ctx.config, "browser_remote_url", ""):
+            return (
+                "render requested but no remote browser configured. Set "
+                "AGENT_BROWSER_REMOTE_URL to a browserless endpoint "
+                "(e.g. http://<lan-ip>:3000) running headless Chrome, or drop "
+                "render to fetch the static HTML."
+            )
+        try:
+            raw = _remote_render(url, ctx)
+        except urllib.error.URLError as e:
+            return f"remote render failed: {e} (is the browserless box reachable?)"
+        except Exception as e:  # noqa: BLE001
+            return f"remote render error: {e}"
+    else:
+        try:
+            raw = _fetch(url)
+        except urllib.error.URLError as e:
+            return f"fetch failed: {e}"
+        except Exception as e:  # noqa: BLE001 - report, don't crash the loop
+            return f"fetch error: {e}"
+
     text = _html_to_text(raw)
     # Cap here too; the loop truncates again but this saves memory.
     return text[:4000]
@@ -95,8 +131,10 @@ def web_search(args: dict[str, Any], ctx: ToolContext) -> str:
 def browser(args: dict[str, Any], ctx: ToolContext) -> str:
     if not getattr(ctx.config, "enable_browser", False):
         return (
-            "browser disabled: set AGENT_ENABLE_BROWSER=1 and install Playwright "
-            "(heavy on Termux; typically run only on the LAN box)."
+            "browser disabled: Playwright won't install on Termux. For JS-rendered "
+            "pages use web_scrape with render=true (drives a remote headless Chrome via "
+            "AGENT_BROWSER_REMOTE_URL). For full click/fill automation, run the harness "
+            "on a desktop/LAN box with AGENT_ENABLE_BROWSER=1 and Playwright installed."
         )
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
@@ -149,7 +187,8 @@ TOOLS = [
         tag="SAFE",
         fn=web_scrape,
         required=("url",),
-        description="Fetch + extract a URL as text.",
+        optional=("render",),
+        description="Fetch + extract a URL as text (render=true uses a remote headless Chrome for JS pages).",
     ),
     Tool(
         name="browser",

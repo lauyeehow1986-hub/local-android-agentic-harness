@@ -293,6 +293,25 @@ def test_extract_pdf_falls_back_to_pypdf(monkeypatch):
     assert text == "from pypdf" and n_pages == 1
 
 
+def test_web_scrape_render_without_remote(reg, ctx):
+    out = reg["web_scrape"].fn({"url": "https://example.com", "render": True}, ctx)
+    assert "AGENT_BROWSER_REMOTE_URL" in out
+
+
+def test_web_scrape_render_uses_remote(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, web
+
+    cfg = Config()
+    cfg.browser_remote_url = "http://lanbox:3000"
+    ctx2 = ToolContext(config=cfg, client=None)
+    monkeypatch.setattr(
+        web, "_remote_render", lambda url, ctx: "<html><body>Rendered JS content</body></html>"
+    )
+    out = reg["web_scrape"].fn({"url": "https://spa.example", "render": True}, ctx2)
+    assert "Rendered JS content" in out
+
+
 def test_analyze_pdf_missing_file(reg, ctx):
     out = reg["analyze_pdf"].fn({"path": "/nope/x.pdf"}, ctx)
     assert "not found" in out

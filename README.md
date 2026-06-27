@@ -97,7 +97,9 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 | `AGENT_WHISPER_MODEL` | `base` | model for openai/faster-whisper (tiny…large) |
 | `AGENT_WHISPER_CPP_MODEL` | _(unset)_ | path to a ggml model for whisper.cpp |
 | `AGENT_WHISPER_LANG` | _(auto)_ | language hint, e.g. `en` |
-| `AGENT_ENABLE_BROWSER` | `0` | gate the heavy Playwright tool |
+| `AGENT_ENABLE_BROWSER` | `0` | gate the local Playwright browser tool (desktop only) |
+| `AGENT_BROWSER_REMOTE_URL` | _(unset)_ | remote headless Chrome (browserless) for `web_scrape render=true` |
+| `AGENT_BROWSER_REMOTE_TOKEN` | _(unset)_ | token for the remote browser, if it requires one |
 
 ## Tools
 
@@ -112,8 +114,16 @@ they run directly **except** the always-confirm set (shell `rm`/`mv`/`git push`/
 overwriting `>`, overwriting a vault note, any outbound send).
 
 Optional backends (the harness degrades gracefully without them):
-- **`browser`** — `pip install playwright && playwright install chromium` and set
-  `AGENT_ENABLE_BROWSER=1`. Heavy on Termux; usually run only on a LAN box.
+- **Browsing JS-heavy pages** — Playwright **won't install on Termux**. Two options:
+  - **`web_scrape` with `render=true`** (phone-friendly, recommended): drives a *remote*
+    headless Chrome over HTTP — run a `browserless/chrome` container on your LAN box
+    (`docker run -p 3000:3000 ghcr.io/browserless/chromium`) and set
+    `AGENT_BROWSER_REMOTE_URL=http://<lan-ip>:3000`. No local browser needed; pure stdlib.
+  - **`browser`** (full click/fill automation) — only on a desktop/LAN box where the
+    *harness itself* runs: `pip install playwright && playwright install chromium` and
+    `AGENT_ENABLE_BROWSER=1`. (Hybrid routing sends only the LLM to the LAN box, not tool
+    execution, so the local browser tool can't be "routed" from the phone.)
+  - For plain static pages, `web_scrape` with no render works on-device already.
 - **`analyze_image`** — `ollama pull moondream` (or a small Qwen2.5-VL/Qwen3-VL).
   Describes an image, answers a question about it, or **reads text from it (OCR)** —
   e.g. `{"path": "...", "question": "Transcribe all text in this image."}`. The vision
@@ -225,6 +235,47 @@ The system prompt dominates that. To make it usable:
   The full `prompts/agent_system.md` stays the default (tool-calling reliability is
   priority #1); the compact variant is opt-in for speed. Both keep the tool contract
   identical.
+
+## Optional backends: what installs on Termux vs desktop
+
+| Capability | Termux (phone) | Desktop / LAN box |
+|---|---|---|
+| Core agent, vault, web_search/scrape | ✅ stdlib | ✅ |
+| Text PDFs | `pip install pypdf` | `pip install pymupdf` |
+| Scanned/encrypted PDF OCR | `pkg install poppler && pip install pdf2image` + `ollama pull moondream` | `pip install pymupdf` + moondream |
+| Image analysis / OCR | `ollama pull moondream` (+ `pip install Pillow`) | same |
+| Meeting transcription | **whisper.cpp** (build below) + `pkg install ffmpeg` | `pip install openai-whisper` |
+| Speaker diarization | ✗ (too heavy) | `pip install whisperx` + `HF_TOKEN` |
+| JS-page rendering | `web_scrape render=true` → remote browserless | local Playwright |
+| Full browser automation | ✗ | `pip install playwright` + `AGENT_ENABLE_BROWSER=1` |
+| PyMuPDF / Playwright / whisperx | ✗ won't build | ✅ |
+
+### Speech-to-text on Termux (whisper.cpp) — verified recipe
+
+```bash
+# toolchain (if cmake errors with a jsoncpp symbol, your packages drifted —
+# `pkg upgrade` resyncs them, which fixes the broken cmake binary):
+pkg upgrade -y
+pkg install -y git cmake clang make ffmpeg
+
+# build
+git clone https://github.com/ggml-org/whisper.cpp && cd whisper.cpp
+cmake -B build && cmake --build build -j --config Release   # → build/bin/whisper-cli
+
+# model (base.en ≈ 142 MB, good speed/quality; tiny.en for more speed)
+sh ./models/download-ggml-model.sh base.en
+
+# wire it up so the harness finds it
+ln -sf "$PWD/build/bin/whisper-cli" "$PREFIX/bin/whisper-cli"
+echo "export AGENT_WHISPER_CPP_MODEL=\"$PWD/models/ggml-base.en.bin\"" >> ~/.bashrc
+export AGENT_WHISPER_CPP_MODEL="$PWD/models/ggml-base.en.bin"
+
+# verify
+whisper-cli -m "$AGENT_WHISPER_CPP_MODEL" -f samples/jfk.wav -otxt
+```
+
+The harness needs all three: the `whisper-cli` binary on PATH, `AGENT_WHISPER_CPP_MODEL`
+pointing at the `.bin`, and `ffmpeg` (it auto-converts m4a/opus/mp3 → 16 kHz WAV).
 
 ## Gotchas
 - The vault path **has a space**. pathlib handles it; every shell use is `shlex.quote`d.

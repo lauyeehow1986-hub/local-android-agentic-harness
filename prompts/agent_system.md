@@ -94,7 +94,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 
 ### Web
 - `web_search` [SAFE] — search engine query. `{"query": str}`
-- `web_scrape` [SAFE] — fetch+extract a URL as text/markdown. `{"url": str}`
+- `web_scrape` [SAFE] — fetch+extract a URL as text/markdown. `{"url": str, "render": bool}` (render=true renders JS pages via a remote headless Chrome; optional)
 - `browser` [GUARDED] — Playwright action (click/fill/navigate/screenshot). `{"steps": [ ... ]}`
 
 ### Data & files

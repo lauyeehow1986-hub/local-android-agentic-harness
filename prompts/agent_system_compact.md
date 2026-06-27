@@ -21,7 +21,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - vault_list [S] {"folder": str}
 - vault_write [G] {"path": str, "content": str, "mode": "create"|"overwrite"|"append"}
 - web_search [S] {"query": str}
-- web_scrape [S] {"url": str}
+- web_scrape [S] {"url": str, "render": bool}  (render=true → JS pages via remote headless Chrome, optional)
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str}
 - analyze_image [S] {"path": str, "question": str}  (describe / answer about / OCR-read text from an image)
