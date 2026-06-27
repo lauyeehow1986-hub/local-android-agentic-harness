@@ -67,7 +67,7 @@ AUTONOMY=full python -m local_agent.main  # autonomous mode (still confirms dest
 One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"`
 
 ### REPL commands
-`/autonomy hitl|full` · `/trace on|off` · `/health` · `/quit`
+`/autonomy hitl|full` · `/route local|remote|auto` · `/trace on|off` · `/health` · `/quit`
 
 ---
 
@@ -83,6 +83,12 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 | `AGENT_TEMPERATURE` | `0.2` | deterministic tool calls |
 | `OLLAMA_KV_CACHE_TYPE` | `q8_0` | set on `ollama serve`, not the harness |
 | `AGENT_MAX_STEPS` | `8` | loop cap — small models drift in long chains |
+| `AGENT_MAX_NEW_TOKENS` | `512` | per-turn decode cap (bounds worst-case latency) |
+| `AGENT_REQUEST_TIMEOUT` | `900` | seconds; generous for cold prefill + throttling |
+| `AGENT_STREAM` | `1` | stream tokens live to the terminal |
+| `OLLAMA_REMOTE_URL` | _(unset)_ | optional faster Ollama for hybrid routing |
+| `AGENT_REMOTE_MODEL` | `qwen3:30b-a3b-instruct-2507` | model on the remote box |
+| `AGENT_ROUTE` | `local` | `local` / `remote` / `auto` |
 | `AGENT_ENABLE_BROWSER` | `0` | gate the heavy Playwright tool |
 
 ## Tools
@@ -106,6 +112,35 @@ Optional backends (the harness degrades gracefully without them):
   model client is available, summarizes/answers a task over it. Scanned (image-only)
   PDFs have no extractable text — use `analyze_image`/OCR for those.
 - **`transcribe`** — a `whisper` / `whisper-cpp` binary on `PATH`.
+
+## Hybrid routing (offload hard tasks to a LAN box)
+
+The on-device 4B is fine for quick vault lookups but slow for multi-step tasks.
+Point the harness at a faster Ollama (e.g. `qwen3:30b-a3b-instruct-2507` on a
+32 GB+ box over Tailscale) — same model family, same tool conventions, clean
+fallback:
+
+```bash
+OLLAMA_REMOTE_URL=http://<lan-ip>:11434 AGENT_ROUTE=auto python -m local_agent.main
+```
+
+- `AGENT_ROUTE=local` (default) — always the phone.
+- `AGENT_ROUTE=remote` — always the LAN box.
+- `AGENT_ROUTE=auto` — LAN box when its health check passes, else local.
+- Switch at runtime with `/route local|remote|auto`; `/health` shows both backends.
+
+## Eval harness (measure before you tune)
+
+Score the agent on representative tasks — trust this over public leaderboards.
+
+```bash
+python -m local_agent.eval                       # uses local_agent/eval_tasks.json
+python -m local_agent.eval --tasks my_tasks.json
+```
+
+Reports **completion rate**, **tool-selection rate**, **valid-JSON rate**,
+**keyword-match rate**, and **mean tok/s**. Add your own tasks as JSON objects:
+`{"id", "task", "expect_tool": <name|null>, "expect_keywords": [..]}`.
 
 ## Latency tuning (this chip is slow — ~3 tok/s, prefill-bound)
 
