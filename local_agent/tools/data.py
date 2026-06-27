@@ -196,11 +196,50 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
     return result or "(no description returned)"
 
 
-def _extract_pdf_text(path: Path, max_pages: int = 50) -> tuple[str, int]:
-    """Return (text, n_pages). Pure-Python via pypdf; raises if unavailable."""
+def _extract_with_pymupdf(path: Path, max_pages: int):
+    """Text via PyMuPDF (fitz). Robust — handles many PDFs pypdf can't, including
+    empty-password-encrypted ones. Returns (text, n_pages) or (None, 0) if fitz
+    is unavailable or the document can't be opened."""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return None, 0
+    try:
+        doc = fitz.open(str(path))
+    except Exception:  # noqa: BLE001 - let pypdf try next
+        return None, 0
+    try:
+        if getattr(doc, "is_encrypted", False):
+            doc.authenticate("")  # try the common empty user password
+        n = doc.page_count
+        parts: list[str] = []
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            try:
+                parts.append(page.get_text() or "")
+            except Exception:  # noqa: BLE001
+                continue
+        return "\n".join(parts).strip(), n
+    except Exception:  # noqa: BLE001
+        return None, 0
+    finally:
+        try:
+            doc.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _extract_with_pypdf(path: Path, max_pages: int) -> tuple[str, int]:
+    """Text via pypdf. Raises ImportError if pypdf isn't installed."""
     from pypdf import PdfReader  # optional dep; caller handles ImportError
 
     reader = PdfReader(str(path))
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")  # empty user password — common for "opens fine" PDFs
+        except Exception:  # noqa: BLE001
+            pass
     pages = reader.pages
     chunks: list[str] = []
     for i, page in enumerate(pages):
@@ -211,6 +250,17 @@ def _extract_pdf_text(path: Path, max_pages: int = 50) -> tuple[str, int]:
         except Exception:  # noqa: BLE001 - skip a bad page, keep going
             continue
     return "\n".join(chunks).strip(), len(pages)
+
+
+def _extract_pdf_text(path: Path, max_pages: int = 50) -> tuple[str, int]:
+    """Return (text, n_pages). Try PyMuPDF first (more robust), then pypdf.
+
+    Raises ImportError only if NEITHER backend is available.
+    """
+    text, n = _extract_with_pymupdf(path, max_pages)
+    if text is not None:
+        return text, n
+    return _extract_with_pypdf(path, max_pages)
 
 
 def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
@@ -229,7 +279,10 @@ def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
     try:
         text, n_pages = _extract_pdf_text(p)
     except ImportError:
-        return "pdf unavailable: install pypdf (`pip install pypdf`) to read PDFs."
+        return (
+            "pdf unavailable: install a PDF reader — `pip install pymupdf` (more "
+            "robust) or `pip install pypdf` — to read PDFs."
+        )
     except Exception as e:  # noqa: BLE001
         return f"pdf read error: {e}"
 

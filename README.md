@@ -122,8 +122,9 @@ Optional backends (the harness degrades gracefully without them):
   Large photos are auto-downscaled to `AGENT_MAX_IMAGE_PX` (1024) if **Pillow** is
   installed (`pip install Pillow`), which cuts RAM and latency; without Pillow it sends
   the full image.
-- **`analyze_pdf`** — `pip install pypdf` (pure-Python). Extracts text and, if the
-  model client is available, summarizes/answers a task over it. **Scanned (image-only)
+- **`analyze_pdf`** — `pip install pymupdf` (most robust — handles encrypted and
+  awkward PDFs) and/or `pip install pypdf`; the tool tries PyMuPDF first, then pypdf.
+  Extracts text and, if the model client is available, summarizes/answers a task over it. **Scanned (image-only)
   PDFs are handled automatically**: when there's no extractable text it renders the
   first `AGENT_PDF_OCR_MAX_PAGES` pages and OCRs them with the vision model. The OCR
   fallback needs a PDF renderer — `pip install pymupdf` (preferred, no system binary)

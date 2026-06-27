@@ -270,6 +270,29 @@ def test_summarize_long_map_reduce(monkeypatch):
     assert "summary" in out
 
 
+def test_extract_pdf_prefers_pymupdf(monkeypatch):
+    from local_agent.tools import data
+
+    # PyMuPDF returns text → pypdf must NOT be consulted.
+    monkeypatch.setattr(data, "_extract_with_pymupdf", lambda p, n: ("hello world", 3))
+
+    def boom(p, n):
+        raise AssertionError("pypdf should not be called when pymupdf succeeds")
+
+    monkeypatch.setattr(data, "_extract_with_pypdf", boom)
+    text, n_pages = data._extract_pdf_text(Path("/whatever.pdf"))
+    assert text == "hello world" and n_pages == 3
+
+
+def test_extract_pdf_falls_back_to_pypdf(monkeypatch):
+    from local_agent.tools import data
+
+    monkeypatch.setattr(data, "_extract_with_pymupdf", lambda p, n: (None, 0))
+    monkeypatch.setattr(data, "_extract_with_pypdf", lambda p, n: ("from pypdf", 1))
+    text, n_pages = data._extract_pdf_text(Path("/whatever.pdf"))
+    assert text == "from pypdf" and n_pages == 1
+
+
 def test_analyze_pdf_missing_file(reg, ctx):
     out = reg["analyze_pdf"].fn({"path": "/nope/x.pdf"}, ctx)
     assert "not found" in out
