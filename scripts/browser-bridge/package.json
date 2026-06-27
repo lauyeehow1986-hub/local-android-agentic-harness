@@ -1,0 +1,13 @@
+{
+  "name": "local-agent-browser-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local headless-Chromium HTTP bridge for local_agent web_scrape(render=true) on Termux",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.40.0"
+  }
+}

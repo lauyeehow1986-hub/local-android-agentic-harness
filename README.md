@@ -115,10 +115,13 @@ overwriting `>`, overwriting a vault note, any outbound send).
 
 Optional backends (the harness degrades gracefully without them):
 - **Browsing JS-heavy pages** — Playwright **won't install on Termux**. Two options:
-  - **`web_scrape` with `render=true`** (phone-friendly, recommended): drives a *remote*
-    headless Chrome over HTTP — run a `browserless/chrome` container on your LAN box
-    (`docker run -p 3000:3000 ghcr.io/browserless/chromium`) and set
-    `AGENT_BROWSER_REMOTE_URL=http://<lan-ip>:3000`. No local browser needed; pure stdlib.
+  - **`web_scrape` with `render=true`** (phone-friendly, recommended): drives a headless
+    Chrome over HTTP and set `AGENT_BROWSER_REMOTE_URL`. Two ways to provide that Chrome:
+    - **LAN box:** `docker run -p 3000:3000 ghcr.io/browserless/chromium`, then
+      `AGENT_BROWSER_REMOTE_URL=http://<lan-ip>:3000` (lightest on the phone).
+    - **On-device:** run `scripts/browser-bridge` (Node + Termux's system Chromium) and
+      point at `http://127.0.0.1:3000` — no LAN box needed. See that folder's README;
+      mind the RAM (Chromium + the 4B is tight on 8 GB).
   - **`browser`** (full click/fill automation) — only on a desktop/LAN box where the
     *harness itself* runs: `pip install playwright && playwright install chromium` and
     `AGENT_ENABLE_BROWSER=1`. (Hybrid routing sends only the LLM to the LAN box, not tool
