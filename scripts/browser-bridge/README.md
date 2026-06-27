@@ -51,7 +51,11 @@ bridge drives headless Chromium and returns the rendered HTML.
   pattern is early-stage; treat as experimental.
 - This bridge does **render-a-URL** only (the common "read this dynamic page" case). For
   interactive click/fill flows, run the harness's `browser` tool on a desktop.
-- Keep `--no-sandbox` — Android has no user namespaces for Chromium's sandbox.
+- Keep `--no-sandbox` — Android has no user namespaces for Chromium's sandbox. The
+  server also passes `--single-process --no-zygote` (Termux Chromium can't fork the
+  multi-process model) and waits on `domcontentloaded` + a settle delay rather than
+  `networkidle` (which aborts on Termux). Tune the delay with `RENDER_SETTLE_MS`
+  (default 1500).
 - **`Unsupported platform: android`**: recent Termux Node (v26+) reports
   `process.platform === 'android'`, which current playwright-core rejects at startup.
   `server.js` works around this by spoofing `process.platform` to `'linux'` before

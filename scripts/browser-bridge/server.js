@@ -31,14 +31,26 @@ const CHROMIUM_PATH =
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
 
+// Let JS run after the DOM is ready before grabbing content (ms).
+const SETTLE_MS = parseInt(process.env.RENDER_SETTLE_MS || '1500', 10);
+
 let browserPromise = null;
 function getBrowser() {
   if (!browserPromise) {
     browserPromise = chromium.launch({
       executablePath: CHROMIUM_PATH,
       headless: true,
-      // Required on Android/Termux; --disable-dev-shm-usage avoids /dev/shm limits.
-      args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      // Termux/Android headless Chromium needs single-process + no-zygote (the
+      // multi-process model fails to fork here). --disable-dev-shm-usage avoids
+      // /dev/shm limits; --disable-gpu since there's no usable GPU path.
+      args: [
+        '--no-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote',
+        '--disable-software-rasterizer',
+      ],
     });
   }
   return browserPromise;
@@ -48,7 +60,10 @@ async function render(url) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
+    // 'networkidle' is flaky on Termux Chromium (aborts); wait for the DOM,
+    // then give JS a moment to render before reading the content.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    if (SETTLE_MS > 0) await page.waitForTimeout(SETTLE_MS);
     return await page.content();
   } finally {
     await page.close();
