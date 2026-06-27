@@ -50,14 +50,25 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434 python -m local_agent.main
 
 ### On the phone (Termux — the deployment target)
 
-```bash
-pkg install python
-pip install -r requirements.txt
-termux-setup-storage                     # one-time: grants access to /storage/emulated/0
+> **Full step-by-step (core + every optional capability + troubleshooting):**
+> **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)**. Short version below.
 
-# Ollama in Termux
-OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve &  # q8_0 halves KV-cache RAM
+```bash
+# one-time base
+termux-setup-storage                      # grants access to /storage/emulated/0
+pkg upgrade -y                            # keep packages in sync (prevents cmake drift)
+pkg install -y python git
+
+# Ollama — start from $HOME or llama-server dies with "getcwd failed"
+cd ~
+OLLAMA_KEEP_ALIVE=30m OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve &
 ollama pull qwen3:4b-instruct-2507-q4_K_M
+
+# the harness
+cd ~
+git clone https://github.com/lauyeehow1986-hub/local-android-agentic-harness.git
+cd local-android-agentic-harness && git checkout claude/build-from-markdown-tbl713 && git pull
+pip install -r requirements.txt
 
 # run (terminal frontend, AUTONOMY=hitl by default)
 python -m local_agent.main
@@ -66,8 +77,48 @@ AUTONOMY=full python -m local_agent.main  # autonomous mode (still confirms dest
 
 One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"`
 
+Optional capabilities (PDF, vision, speech, browser, maps) each have a short install
+block in **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)**.
+
 ### REPL commands
 `/autonomy hitl|full` · `/route local|remote|auto` · `/trace on|off` · `/health` · `/quit`
+
+### Batch & cron (unattended runs)
+
+Run a list of tasks with no human in the loop — for scheduled jobs:
+
+```bash
+python -m local_agent.batch tasks.txt            # one task per line (# = comment)
+python -m local_agent.batch tasks.json           # JSON list of task strings
+echo "summarize my day from Daily/" | python -m local_agent.batch -   # stdin
+python -m local_agent.batch --approve tasks.txt  # allow GUARDED actions (default: auto-deny)
+```
+
+GUARDED actions are **auto-denied** by default (nobody's there to approve); pass
+`--approve` (with `AUTONOMY=full`) only for task lists you trust. Schedule with cron:
+
+```bash
+pkg install -y cronie
+crond                                              # start the daemon (add to startup)
+crontab -e
+# e.g. every morning at 7am, write a daily digest to the vault:
+# 0 7 * * *  cd ~/local-android-agentic-harness && AUTONOMY=full \
+#   python -m local_agent.batch --approve ~/jobs/morning.txt >> ~/jobs/morning.log 2>&1
+```
+
+(Alternatively use Android's scheduler via `termux-job-scheduler` from `termux-api`.)
+
+### Maps & opening apps (incl. Grab)
+
+- `maps` searches places and gives driving directions (OpenStreetMap, no API key) and
+  returns a Google Maps link.
+- `open_app` opens a URL/app deeplink on the phone (Maps navigation, the Grab app, …).
+
+**On food delivery (Grab/foodpanda/etc.):** there is **no public ordering API**, so the
+agent **cannot place orders or pay** — and won't pretend to. What it does: find the
+place with `maps` and **open the Grab app/site** with `open_app` so *you* pick items and
+pay. `open_app` needs `pkg install termux-api`. This keeps money and account actions in
+your hands by design.
 
 ---
 
@@ -107,7 +158,7 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 `web_search` `web_scrape` `browser`*(G)* ·
 `analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
-`shell`*(G)* `git_sync`*(G)* `request_approval`
+`maps` `open_app`*(G)* · `shell`*(G)* `git_sync`*(G)* `request_approval`
 
 **(G) = GUARDED** (writes/deletes/sends/shell). In `hitl` they require approval; in `full`
 they run directly **except** the always-confirm set (shell `rm`/`mv`/`git push`/`curl|sh`/
@@ -182,6 +233,9 @@ Optional backends (the harness degrades gracefully without them):
 | "Transcribe the meeting at /sdcard/Recordings/standup.m4a and list action items" | `transcribe` (task=action items) |
 | "Transcribe …/meeting.m4a and save the notes to my vault" | `transcribe` → `request_approval` → `vault_write` |
 | "Make meeting notes from …/sync.m4a and file them under Meetings/" | `meeting_notes` → `request_approval` → `vault_write` |
+| "Directions from my office to Marina Bay Sands" | `maps` (origin/destination) |
+| "Find the nearest pharmacy and open it in Maps" | `maps` → `request_approval` → `open_app` |
+| "Open Grab to order chicken rice" | `open_app` (opens the Grab app; **you** pick + pay) |
 | "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
 | "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
 | "Commit and push my vault" | `request_approval` → `git_sync` |

@@ -138,6 +138,40 @@ yh> scrape https://news.ycombinator.com with rendering and summarize the top sto
 
 ---
 
+## 5b. Optional: maps & opening apps (Grab, navigation)
+
+```bash
+pkg install -y termux-api          # provides termux-open-url for open_app
+```
+- `maps` needs nothing extra (uses OpenStreetMap).
+- `open_app` opens URLs/deeplinks on the phone. The agent can find a place and open
+  the Grab app/site for you, but **cannot order or pay** — you finish in the app.
+
+```
+yh> directions from home to Marina Bay Sands
+yh> open Grab to order chicken rice
+```
+
+## 5c. Optional: cron / batch jobs
+
+```bash
+pkg install -y cronie
+crond                              # start the cron daemon (add to startup)
+mkdir -p ~/jobs
+printf 'summarize my notes from Daily/ for this week\n' > ~/jobs/weekly.txt
+crontab -e
+```
+Example crontab line (Monday 8am weekly digest, allowing writes):
+```
+0 8 * * 1  cd ~/local-android-agentic-harness && AUTONOMY=full \
+  python -m local_agent.batch --approve ~/jobs/weekly.txt >> ~/jobs/weekly.log 2>&1
+```
+Run a batch manually any time:
+```bash
+python -m local_agent.batch ~/jobs/weekly.txt            # guarded actions auto-denied
+python -m local_agent.batch --approve ~/jobs/weekly.txt  # allow writes/sends
+```
+
 ## 6. Make it persistent (~/.bashrc)
 
 Add these so every new Termux session is configured (the whisper/browser lines

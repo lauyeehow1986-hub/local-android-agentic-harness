@@ -32,6 +32,8 @@ CONTRACT_TOOLS = {
     "rephrase",
     "shell",
     "git_sync",
+    "open_app",
+    "maps",
     "request_approval",
 }
 
@@ -67,6 +69,7 @@ def test_guarded_set(reg):
         "make_html_report",
         "shell",
         "git_sync",
+        "open_app",
     }
 
 

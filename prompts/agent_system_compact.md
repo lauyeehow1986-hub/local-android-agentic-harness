@@ -31,6 +31,8 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - make_slides [G] {"title": str, "outline": [str], "out_path": str}
 - make_html_report [G] {"title": str, "sections": [...], "out_path": str}
 - rephrase [S] {"text": str, "style": str}
+- maps [S] {"query": str} OR {"origin": str, "destination": str}  (place search / driving directions, returns Maps link)
+- open_app [G] {"target": str}  (open a URL/deeplink on the phone, e.g. Grab app or Maps nav; cannot order/pay)
 - shell [G] {"cmd": str}
 - git_sync [G] {"repo_path": str, "message": str}
 - request_approval [S] {"action": str, "details": str}

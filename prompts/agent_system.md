@@ -109,12 +109,17 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 - `make_html_report` [GUARDED] — build an HTML report (writes a file). `{"title": str, "sections": [...], "out_path": str}`
 - `rephrase` [SAFE] — rewrite text (email/sentence). `{"text": str, "style": str}`
 
+### Maps & device
+- `maps` [SAFE] — search a place or get driving directions (OpenStreetMap; returns a Google Maps link). `{"query": str}` OR `{"origin": str, "destination": str}`
+- `open_app` [GUARDED] — open a URL or app deeplink on the phone (e.g. Google Maps navigation, the Grab app to a search). It only OPENS the app; it cannot place orders or pay — the user completes that. `{"target": str}`
+
 ### System / control
 - `shell` [GUARDED] — run a Termux shell command. `{"cmd": str}`
 - `request_approval` [SAFE to call] — pause for user decision. `{"action": str, "details": str}`
 - `git_sync` [GUARDED] — commit & push vault or repo. `{"repo_path": str, "message": str}`
 
 Notes:
+- For food delivery (e.g. Grab): there is no ordering API. Use `maps` to find the place and `open_app` to open the Grab app/site; the user finishes the order and pays. Never claim you placed an order.
 - `rephrase` and the analysis tools may internally call the local model; that's fine, they're SAFE.
 - `make_*` tools are GUARDED only because they write files — approve once, they're harmless.
 - If a tool you need isn't listed, do NOT hallucinate one. Go to FINAL and say what's missing.

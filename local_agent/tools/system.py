@@ -9,6 +9,7 @@ in the loop, but it's registered here so the registry is complete.
 from __future__ import annotations
 
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,38 @@ def git_sync(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"rc={proc.returncode}\n{out}"[:1500]
 
 
+def open_app(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Open a URL or app deeplink on the phone (Termux).
+
+    For things like launching Google Maps navigation or the Grab app to a search.
+    It only OPENS the target — it cannot place orders or handle payment; the user
+    completes those in the app. GUARDED (it launches an external app).
+    """
+    target = str(args.get("target", "")).strip()
+    if not target:
+        return "error: 'target' (a URL or deeplink) is required"
+    opener = shutil.which("termux-open-url")
+    try:
+        if opener:
+            subprocess.run([opener, target], timeout=20, capture_output=True, text=True)
+            return f"opened: {target}"
+        am = shutil.which("am")
+        if am:
+            subprocess.run(
+                ["am", "start", "-a", "android.intent.action.VIEW", "-d", target],
+                timeout=20,
+                capture_output=True,
+                text=True,
+            )
+            return f"opened via intent: {target}"
+        return (
+            "cannot open: no opener found. Install termux-api "
+            "(`pkg install termux-api`) for termux-open-url."
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"open error: {e}"
+
+
 def request_approval(args: dict[str, Any], ctx: ToolContext) -> str:
     # This should be intercepted by the loop/frontend. If a tool dispatch ever
     # reaches here, it means no frontend handled it — return a neutral note.
@@ -95,6 +128,13 @@ TOOLS = [
         required=("repo_path",),
         optional=("message",),
         description="Commit & push a repo/vault.",
+    ),
+    Tool(
+        name="open_app",
+        tag="GUARDED",
+        fn=open_app,
+        required=("target",),
+        description="Open a URL/app deeplink on the phone (e.g. Maps nav, Grab app). Cannot pay/order.",
     ),
     Tool(
         name="request_approval",
