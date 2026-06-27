@@ -22,6 +22,23 @@ class TerminalFrontend:
     def __init__(self, *, show_trace: bool = True) -> None:
         self.show_trace = show_trace
 
+    # -- streaming --------------------------------------------------------
+    def stream_begin(self) -> None:
+        if self.show_trace:
+            sys.stdout.write(_c("2", "  · "))
+            sys.stdout.flush()
+
+    def on_token(self, text: str) -> None:
+        if self.show_trace:
+            # Render the model's tokens live, dimmed, no newline.
+            sys.stdout.write(_c("2", text))
+            sys.stdout.flush()
+
+    def stream_end(self) -> None:
+        if self.show_trace:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+
     # -- loop callbacks ---------------------------------------------------
     def on_thought(self, text: str) -> None:
         if self.show_trace and text:

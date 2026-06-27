@@ -52,6 +52,19 @@ class Config:
     model: str = field(
         default_factory=lambda: _env_str("AGENT_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
     )
+    # Optional faster Ollama on a LAN box (e.g. 30B-A3B over Tailscale). When
+    # OLLAMA_REMOTE_URL is set, the harness can route hard tasks there. Same
+    # family → same tool conventions → clean fallback to local.
+    remote_base_url: str = field(
+        default_factory=lambda: _env_str("OLLAMA_REMOTE_URL", "")
+    )
+    remote_model: str = field(
+        default_factory=lambda: _env_str(
+            "AGENT_REMOTE_MODEL", "qwen3:30b-a3b-instruct-2507"
+        )
+    )
+    # Routing mode: local | remote | auto. `auto` uses remote when reachable.
+    route: str = field(default_factory=lambda: _env_str("AGENT_ROUTE", "local"))
     # Vision model is loaded ON DEMAND for analyze_image, then unloaded. Never
     # resident alongside the 4B (see Gotchas in CLAUDE.md).
     vision_model: str = field(
@@ -110,6 +123,12 @@ class Config:
         default_factory=lambda: Path(
             _env_str("AGENT_LOG", str(Path.home() / ".local_agent" / "agent.log"))
         )
+    )
+
+    # Stream model output to the frontend token-by-token. At ~3 tok/s this is a
+    # big perceived-latency win and keeps the socket active (fewer timeouts).
+    stream: bool = field(
+        default_factory=lambda: _env_str("AGENT_STREAM", "1") == "1"
     )
 
     # --- Feature flags for heavy/optional tools ---

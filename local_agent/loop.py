@@ -59,12 +59,32 @@ def _truncate(text: str, limit: int) -> str:
 class Agent:
     config: Config
     client: OllamaClient
+    # Optional faster Ollama on a LAN box (e.g. 30B-A3B over Tailscale). Same
+    # tool conventions → clean fallback. When set and reachable, `auto`/`remote`
+    # routing sends generation there; we always fall back to local on failure.
+    remote_client: Optional[OllamaClient] = None
 
     def __post_init__(self) -> None:
         self.registry = build_registry()
         self.logger = _make_logger(self.config)
         self.system_prompt = self.config.load_system_prompt()
         self.ctx = ToolContext(config=self.config, client=self.client)
+        # local | remote | auto  (auto = remote if reachable, else local)
+        self.route = getattr(self.config, "route", "local")
+
+    def _active_client(self) -> OllamaClient:
+        """Pick the client for this turn per the routing mode, with fallback."""
+        if self.remote_client is None or self.route == "local":
+            return self.client
+        if self.route == "remote":
+            return self.remote_client
+        # auto: prefer remote when its server answers, else local.
+        try:
+            if self.remote_client.health():
+                return self.remote_client
+        except Exception:  # noqa: BLE001
+            pass
+        return self.client
 
     # -- prompt assembly --------------------------------------------------
     def _initial_transcript(self, user_task: str) -> str:
@@ -128,12 +148,29 @@ class Agent:
         json_retries_used = 0
 
         for step in range(1, self.config.max_steps + 1):
+            # Stream tokens to the frontend if it supports it and streaming is on.
+            on_token = None
+            streamed = False
+            if self.config.stream and hasattr(frontend, "on_token"):
+                on_token = frontend.on_token
             try:
-                raw = self.client.generate(
-                    self._full_prompt(transcript), system=self.system_prompt
-                )
+                if on_token is not None:
+                    if hasattr(frontend, "stream_begin"):
+                        frontend.stream_begin()
+                    raw = self._active_client().generate(
+                        self._full_prompt(transcript),
+                        system=self.system_prompt,
+                        on_token=on_token,
+                    )
+                    streamed = True
+                    if hasattr(frontend, "stream_end"):
+                        frontend.stream_end()
+                else:
+                    raw = self._active_client().generate(
+                        self._full_prompt(transcript), system=self.system_prompt
+                    )
             except OllamaError as e:
-                msg = f"model unreachable: {e}"
+                msg = f"model error: {e}"
                 frontend.on_info(msg)
                 self.logger.error(msg)
                 return msg
@@ -141,7 +178,8 @@ class Agent:
             self.logger.info("STEP %d RAW: %s", step, raw)
             parsed = parser.parse(raw)
 
-            if parsed.thought:
+            # When streaming, the THOUGHT was already shown live; don't repeat it.
+            if parsed.thought and not streamed:
                 frontend.on_thought(parsed.thought)
 
             # FINAL — done.

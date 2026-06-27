@@ -4,10 +4,11 @@
     AUTONOMY=full python -m local_agent.main
 
 Runtime commands in the REPL:
-    /autonomy hitl|full   toggle approval mode
-    /trace on|off         show/hide the ReAct trace
-    /health               check the Ollama connection
-    /quit                 exit
+    /autonomy hitl|full       toggle approval mode
+    /route local|remote|auto  pick the model backend (remote = LAN box)
+    /trace on|off             show/hide the ReAct trace
+    /health                   check the Ollama connection(s)
+    /quit                     exit
 """
 
 from __future__ import annotations
@@ -29,7 +30,17 @@ def build_agent(config) -> Agent:
         timeout_s=config.request_timeout_s,
         num_predict=config.max_new_tokens,
     )
-    return Agent(config=config, client=client)
+    remote_client = None
+    if config.remote_base_url:
+        remote_client = OllamaClient(
+            base_url=config.remote_base_url,
+            model=config.remote_model,
+            num_ctx=config.num_ctx,
+            temperature=config.temperature,
+            timeout_s=config.request_timeout_s,
+            num_predict=config.max_new_tokens,
+        )
+    return Agent(config=config, client=client, remote_client=remote_client)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,8 +82,25 @@ def main(argv: list[str] | None = None) -> int:
             frontend.on_info(f"trace = {'on' if frontend.show_trace else 'off'}")
             continue
         if task == "/health":
-            ok = agent.client.health()
-            frontend.on_info("ollama: " + ("ok" if ok else "unreachable"))
+            local_ok = agent.client.health()
+            msg = "local ollama: " + ("ok" if local_ok else "unreachable")
+            if agent.remote_client is not None:
+                remote_ok = agent.remote_client.health()
+                msg += " · remote: " + ("ok" if remote_ok else "unreachable")
+            frontend.on_info(msg)
+            continue
+        if task.startswith("/route"):
+            parts = task.split()
+            if len(parts) == 2 and parts[1] in ("local", "remote", "auto"):
+                if parts[1] != "local" and agent.remote_client is None:
+                    frontend.on_info(
+                        "no remote configured; set OLLAMA_REMOTE_URL to use remote/auto"
+                    )
+                else:
+                    agent.route = parts[1]
+                    frontend.on_info(f"route = {agent.route}")
+            else:
+                frontend.on_info("usage: /route local|remote|auto")
             continue
 
         agent.run_task(task, frontend)

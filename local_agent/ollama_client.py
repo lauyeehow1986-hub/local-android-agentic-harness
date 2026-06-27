@@ -40,16 +40,16 @@ class OllamaClient:
         self.num_predict = num_predict
 
     # -- internal ---------------------------------------------------------
-    def _post(self, path: str, payload: dict) -> dict:
+    def _request(self, path: str, payload: dict) -> urllib.request.Request:
         url = f"{self.base_url}{path}"
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        return urllib.request.Request(
             url, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                body = resp.read().decode("utf-8")
-        except urllib.error.HTTPError as e:
+
+    def _translate_error(self, e: Exception, path: str, payload: dict) -> "OllamaError":
+        """Map low-level urllib/socket failures to a clear OllamaError."""
+        if isinstance(e, urllib.error.HTTPError):
             # Server IS reachable but returned an error status. Surface its body
             # — a 404 here almost always means the model isn't pulled, and
             # Ollama puts {"error": "model 'X' not found"} in the response.
@@ -64,34 +64,72 @@ class OllamaClient:
                     f" — model '{payload.get('model', '?')}' is not pulled. "
                     f"Run: ollama pull {payload.get('model', '?')}"
                 )
-            raise OllamaError(
-                f"Ollama returned HTTP {e.code} for {path}: {detail}{hint}"
-            ) from e
-        except (TimeoutError, socket.timeout) as e:
+            return OllamaError(f"Ollama returned HTTP {e.code} for {path}: {detail}{hint}")
+        if isinstance(e, (TimeoutError, socket.timeout)):
             # The model is decoding slower than request_timeout_s allows (heavy
-            # thermal throttling on this chip). Surface it cleanly, not as a
-            # traceback, with the actionable knobs.
-            raise OllamaError(
+            # thermal throttling on this chip). Surface it cleanly.
+            return OllamaError(
                 f"request to Ollama timed out after {self.timeout_s}s — the model is "
                 "decoding very slowly (thermal throttling / RAM pressure). Try a "
-                "smaller model, a lower AGENT_NUM_CTX, the compact prompt, or raise "
-                "AGENT_REQUEST_TIMEOUT."
-            ) from e
-        except urllib.error.URLError as e:
-            # urllib wraps connection-level timeouts here too on some platforms.
+                "smaller model, a lower AGENT_NUM_CTX, the compact prompt, streaming, "
+                "or raise AGENT_REQUEST_TIMEOUT."
+            )
+        if isinstance(e, urllib.error.URLError):
             reason = getattr(e, "reason", e)
             if isinstance(reason, (TimeoutError, socket.timeout)):
-                raise OllamaError(
+                return OllamaError(
                     f"request to Ollama timed out after {self.timeout_s}s "
                     "(thermal throttling / RAM pressure)."
-                ) from e
-            raise OllamaError(f"cannot reach Ollama at {url}: {e}") from e
-        except OSError as e:
-            raise OllamaError(f"network error talking to Ollama at {url}: {e}") from e
+                )
+            return OllamaError(f"cannot reach Ollama at {self.base_url}{path}: {e}")
+        if isinstance(e, OSError):
+            return OllamaError(f"network error talking to Ollama at {self.base_url}{path}: {e}")
+        return OllamaError(f"unexpected error talking to Ollama: {e}")
+
+    def _post(self, path: str, payload: dict) -> dict:
+        req = self._request(path, payload)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                body = resp.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as e:
+            raise self._translate_error(e, path, payload) from e
         try:
             return json.loads(body)
         except json.JSONDecodeError as e:
             raise OllamaError(f"bad JSON from Ollama: {e}: {body[:200]}") from e
+
+    def _post_stream(self, path: str, payload: dict, on_token) -> str:
+        """Stream NDJSON chunks from Ollama, forwarding each token to on_token.
+
+        Returns the full accumulated text. Streaming also keeps the socket
+        active, so a slow-but-steady decode won't trip the read timeout the way
+        one long blocking request does.
+        """
+        req = self._request(path, payload)
+        pieces: list[str] = []
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                for line in resp:
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line.decode("utf-8"))
+                    except json.JSONDecodeError:
+                        continue
+                    if "error" in chunk:
+                        raise OllamaError(f"Ollama stream error: {chunk['error']}")
+                    tok = chunk.get("response", "")
+                    if tok:
+                        pieces.append(tok)
+                        try:
+                            on_token(tok)
+                        except Exception:  # noqa: BLE001 - display must not kill gen
+                            pass
+                    if chunk.get("done"):
+                        break
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as e:
+            raise self._translate_error(e, path, payload) from e
+        return "".join(pieces)
 
     # -- public -----------------------------------------------------------
     def generate(
@@ -101,11 +139,13 @@ class OllamaClient:
         system: Optional[str] = None,
         model: Optional[str] = None,
         options: Optional[dict[str, Any]] = None,
+        on_token=None,
     ) -> str:
-        """Single-shot completion. Non-streaming (we want the whole block).
+        """Single-shot completion returning the full text.
 
         Uses /api/generate with the ReAct transcript as the prompt. The system
-        prompt (agent_system.md) is passed separately.
+        prompt is passed separately. If on_token is given, streams chunks to it
+        (the terminal renders them live) while still returning the full text.
         """
         opts = {
             "num_ctx": self.num_ctx,
@@ -118,14 +158,17 @@ class OllamaClient:
         }
         if options:
             opts.update(options)
+        streaming = on_token is not None
         payload: dict[str, Any] = {
             "model": model or self.model,
             "prompt": prompt,
-            "stream": False,
+            "stream": streaming,
             "options": opts,
         }
         if system:
             payload["system"] = system
+        if streaming:
+            return self._post_stream("/api/generate", payload, on_token)
         result = self._post("/api/generate", payload)
         return result.get("response", "")
 
