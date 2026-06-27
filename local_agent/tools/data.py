@@ -79,12 +79,11 @@ def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
-def _image_bytes(p: Path, max_px: int) -> bytes:
-    """Return image bytes, downscaled so the longest side <= max_px if Pillow is
-    available. Falls back to the raw bytes (no resize) if Pillow isn't installed
-    or anything goes wrong — vision still works, just slower on big photos.
+def _downscale_bytes(raw: bytes, max_px: int) -> bytes:
+    """Downscale image bytes so the longest side <= max_px, if Pillow is
+    available. Returns raw unchanged if Pillow isn't installed, the image is
+    already small, or anything goes wrong — vision still works, just slower.
     """
-    raw = p.read_bytes()
     if max_px <= 0:
         return raw
     try:
@@ -100,13 +99,69 @@ def _image_bytes(p: Path, max_px: int) -> bytes:
                 return raw
             scale = max_px / longest
             new_size = (max(1, int(im.width * scale)), max(1, int(im.height * scale)))
-            im = im.convert("RGB")
-            im = im.resize(new_size)
+            im = im.convert("RGB").resize(new_size)
             out = io.BytesIO()
             im.save(out, format="JPEG", quality=85)
             return out.getvalue()
     except Exception:  # noqa: BLE001 - any decode/resize failure → use raw
         return raw
+
+
+def _image_bytes(p: Path, max_px: int) -> bytes:
+    """Read an image file and downscale it (see _downscale_bytes)."""
+    return _downscale_bytes(p.read_bytes(), max_px)
+
+
+def _vision_ocr(ctx: ToolContext, img_bytes: bytes, question: str) -> str:
+    """Run the vision model on raw image bytes; load-on-demand, unload after."""
+    import base64 as _b64
+
+    max_px = getattr(ctx.config, "max_image_px", 1024)
+    b64 = _b64.b64encode(_downscale_bytes(img_bytes, max_px)).decode("ascii")
+    vision_model = getattr(ctx.config, "vision_model", "moondream")
+    keep_alive = getattr(ctx.config, "vision_keep_alive", "0")
+    return ctx.client.generate(
+        question, model=vision_model, images=[b64], keep_alive=keep_alive
+    ).strip()
+
+
+def _render_pdf_pages(path: Path, max_pages: int) -> list[bytes]:
+    """Render the first max_pages of a PDF to PNG bytes.
+
+    Tries PyMuPDF (`fitz`, no external binary) first, then pdf2image (needs the
+    poppler `pdftoppm` binary). Raises RuntimeError('no-backend') if neither is
+    available so the caller can give an install hint.
+    """
+    # Backend 1: PyMuPDF.
+    try:
+        import fitz  # PyMuPDF
+
+        out: list[bytes] = []
+        with fitz.open(str(path)) as doc:
+            for i, page in enumerate(doc):
+                if i >= max_pages:
+                    break
+                pix = page.get_pixmap(dpi=150)
+                out.append(pix.tobytes("png"))
+        return out
+    except ImportError:
+        pass
+
+    # Backend 2: pdf2image + poppler.
+    try:
+        import io
+
+        from pdf2image import convert_from_path
+
+        images = convert_from_path(str(path), dpi=150, first_page=1, last_page=max_pages)
+        out = []
+        for im in images:
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+            out.append(buf.getvalue())
+        return out
+    except ImportError:
+        raise RuntimeError("no-backend")
 
 
 def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
@@ -129,25 +184,16 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
     if ctx.client is None:
         return "vision unavailable: no model client in context"
 
-    max_px = getattr(ctx.config, "max_image_px", 1024)
     try:
-        data = _image_bytes(p, max_px)
+        raw = p.read_bytes()
     except OSError as e:
         return f"read error: {e}"
-    img_b64 = base64.b64encode(data).decode("ascii")
-
     vision_model = getattr(ctx.config, "vision_model", "moondream")
-    keep_alive = getattr(ctx.config, "vision_keep_alive", "0")
     try:
-        result = ctx.client.generate(
-            question,
-            model=vision_model,
-            images=[img_b64],
-            keep_alive=keep_alive,
-        )
+        result = _vision_ocr(ctx, raw, question)
     except Exception as e:  # noqa: BLE001
         return f"vision error: {e} (is '{vision_model}' pulled? try: ollama pull {vision_model})"
-    return result.strip() or "(no description returned)"
+    return result or "(no description returned)"
 
 
 def _extract_pdf_text(path: Path, max_pages: int = 50) -> tuple[str, int]:
@@ -188,10 +234,9 @@ def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"pdf read error: {e}"
 
     if not text:
-        return (
-            f"no extractable text in {p.name} ({n_pages} pages) — it's likely a "
-            "scanned image. Try analyze_image on a page render, or OCR first."
-        )
+        # Scanned/image-only PDF: fall back to rendering pages and OCR'ing them
+        # with the vision model.
+        return _analyze_pdf_ocr(p, n_pages, task, ctx)
 
     # Cap the text fed to the small model; long context destroys latency.
     excerpt = text[:6000]
@@ -209,6 +254,59 @@ def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
     except Exception as e:  # noqa: BLE001
         return f"pdf summarize error: {e} (text extracted OK, {n_pages} pages)"
     return f"{p.name} ({n_pages} pages):\n{answer.strip()}"
+
+
+def _analyze_pdf_ocr(p: Path, n_pages: int, task: str, ctx: ToolContext) -> str:
+    """OCR fallback for image-only PDFs: render pages → vision model → text."""
+    if ctx.client is None:
+        return (
+            f"no extractable text in {p.name} ({n_pages} pages) — looks scanned, and "
+            "no vision client is available to OCR it."
+        )
+    max_pages = getattr(ctx.config, "pdf_ocr_max_pages", 5)
+    try:
+        pages = _render_pdf_pages(p, max_pages)
+    except RuntimeError:
+        return (
+            f"no extractable text in {p.name} ({n_pages} pages) — it's scanned. To OCR "
+            "it, install a PDF renderer: `pip install pymupdf` (preferred) or "
+            "`pip install pdf2image` + the poppler binary (`pkg install poppler`)."
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"pdf render error: {e}"
+    if not pages:
+        return f"could not render any pages from {p.name}"
+
+    vision_model = getattr(ctx.config, "vision_model", "moondream")
+    ocr_parts: list[str] = []
+    for i, img in enumerate(pages, 1):
+        try:
+            txt = _vision_ocr(ctx, img, "Transcribe all text in this image verbatim.")
+        except Exception as e:  # noqa: BLE001
+            return f"vision OCR error on page {i}: {e} (is '{vision_model}' pulled?)"
+        if txt:
+            ocr_parts.append(f"[page {i}]\n{txt}")
+    ocr_text = "\n\n".join(ocr_parts).strip()
+    if not ocr_text:
+        return f"OCR produced no text for {p.name} ({n_pages} pages)."
+
+    note = (
+        f"{p.name} ({n_pages} pages, OCR'd first {len(pages)} via {vision_model})"
+    )
+    # Optionally run the task (e.g. summarize) over the OCR'd text with the text
+    # model. This swaps the vision model out for the 4B again.
+    excerpt = ocr_text[:6000]
+    if task and task.lower() not in ("transcribe", "ocr", "extract text"):
+        try:
+            answer = ctx.client.generate(
+                f"Document text (OCR'd, may be imperfect):\n{excerpt}\n\n"
+                f"Task: {task}\nAnswer concisely.",
+                system="You summarize documents tersely.",
+            )
+            return f"{note}:\n{answer.strip()}"
+        except Exception:  # noqa: BLE001 - fall back to raw OCR text
+            pass
+    return f"{note}:\n{excerpt}"
 
 
 def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:

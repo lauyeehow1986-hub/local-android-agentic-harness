@@ -92,6 +92,7 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 | `AGENT_VISION_MODEL` | `moondream` | vision model for `analyze_image` |
 | `AGENT_VISION_KEEP_ALIVE` | `0` | unload vision model immediately (RAM-safe) |
 | `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
+| `AGENT_PDF_OCR_MAX_PAGES` | `5` | pages to render + OCR for scanned PDFs |
 | `AGENT_ENABLE_BROWSER` | `0` | gate the heavy Playwright tool |
 
 ## Tools
@@ -118,9 +119,34 @@ Optional backends (the harness degrades gracefully without them):
   installed (`pip install Pillow`), which cuts RAM and latency; without Pillow it sends
   the full image.
 - **`analyze_pdf`** — `pip install pypdf` (pure-Python). Extracts text and, if the
-  model client is available, summarizes/answers a task over it. Scanned (image-only)
-  PDFs have no extractable text — use `analyze_image`/OCR for those.
+  model client is available, summarizes/answers a task over it. **Scanned (image-only)
+  PDFs are handled automatically**: when there's no extractable text it renders the
+  first `AGENT_PDF_OCR_MAX_PAGES` pages and OCRs them with the vision model. The OCR
+  fallback needs a PDF renderer — `pip install pymupdf` (preferred, no system binary)
+  or `pip install pdf2image` + `pkg install poppler` — plus a vision model
+  (`ollama pull moondream`).
 - **`transcribe`** — a `whisper` / `whisper-cpp` binary on `PATH`.
+
+## Example prompts (what you can ask at `yh>`)
+
+| Ask | Tool(s) the agent uses |
+|---|---|
+| "What did I note about recurrent events?" | `vault_search` → `vault_read` |
+| "List the notes in my Daily folder" | `vault_list` |
+| "Save a daily note that I deployed v10.13" | `request_approval` → `vault_write` (append) |
+| "Rephrase this politely: 'send me the file now'" | `rephrase` |
+| "Search the web for the OMOP CDM standard" | `web_search` |
+| "Summarize https://example.com/article" | `web_scrape` |
+| "Analyze /sdcard/Download/data.csv — how many rows?" | `analyze_data` |
+| "Describe /sdcard/DCIM/Camera/IMG_2026.jpg" | `analyze_image` |
+| "Read all the text in /sdcard/Download/receipt.png" | `analyze_image` (OCR) |
+| "Summarize the PDF at /sdcard/Download/paper.pdf" | `analyze_pdf` (text, or OCR if scanned) |
+| "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
+| "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
+| "Commit and push my vault" | `request_approval` → `git_sync` |
+
+Read-only/analysis tools (SAFE) run immediately. Anything that writes/sends/executes
+(GUARDED) asks first in `hitl` mode.
 
 ## Hybrid routing (offload hard tasks to a LAN box)
 

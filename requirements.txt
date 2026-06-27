@@ -10,6 +10,11 @@ pytest>=7.0
 #   pip install pypdf
 # pypdf>=4.0
 #
+# Scanned/image-only PDF OCR (analyze_pdf fallback) — a renderer + a vision model:
+#   pip install pymupdf          # preferred, no system binary
+#   # or: pip install pdf2image && pkg install poppler
+# pymupdf>=1.24
+#
 # Browser tool (Playwright) — heavy on Termux; typically run on the LAN box:
 #   pip install playwright && playwright install chromium
 # playwright>=1.40

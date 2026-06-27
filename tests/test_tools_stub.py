@@ -128,6 +128,54 @@ def test_analyze_pdf_missing_file(reg, ctx):
     assert "not found" in out
 
 
+def test_analyze_pdf_ocr_fallback_for_scanned(reg, tmp_path, monkeypatch):
+    """A PDF with no extractable text should render pages and OCR via vision."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="INVOICE total 42.00")
+    ctx2 = ToolContext(config=cfg, client=client)
+
+    fake_pdf = tmp_path / "scan.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 scanned")
+
+    # No extractable text → triggers OCR path.
+    monkeypatch.setattr(data, "_extract_pdf_text", lambda p, max_pages=50: ("", 2))
+    # Pretend the renderer produced two page images.
+    monkeypatch.setattr(data, "_render_pdf_pages", lambda p, n: [b"png1", b"png2"])
+
+    out = reg["analyze_pdf"].fn({"path": str(fake_pdf), "task": "transcribe"}, ctx2)
+    assert "OCR'd" in out
+    assert "INVOICE total 42.00" in out
+    # Vision model was used with an image payload.
+    assert client.last["images"] and client.last["model"] == cfg.vision_model
+
+
+def test_analyze_pdf_scanned_no_renderer(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient()
+    ctx2 = ToolContext(config=cfg, client=client)
+    fake_pdf = tmp_path / "scan.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 scanned")
+
+    monkeypatch.setattr(data, "_extract_pdf_text", lambda p, max_pages=50: ("", 1))
+
+    def no_backend(p, n):
+        raise RuntimeError("no-backend")
+
+    monkeypatch.setattr(data, "_render_pdf_pages", no_backend)
+    out = reg["analyze_pdf"].fn({"path": str(fake_pdf)}, ctx2)
+    assert "pymupdf" in out.lower()
+
+
 def test_analyze_pdf_graceful_without_pypdf(reg, ctx, tmp_path, monkeypatch):
     # Simulate pypdf not installed: the import inside _extract_pdf_text raises.
     import builtins

@@ -82,6 +82,11 @@ class Config:
     max_image_px: int = field(
         default_factory=lambda: _env_int("AGENT_MAX_IMAGE_PX", 1024)
     )
+    # For scanned (image-only) PDFs, how many pages to render + OCR with the
+    # vision model. Vision is slow on-device, so keep this modest.
+    pdf_ocr_max_pages: int = field(
+        default_factory=lambda: _env_int("AGENT_PDF_OCR_MAX_PAGES", 5)
+    )
     # num_ctx: keep small or the KV cache OOM-kills on 8 GB. NOT the 256K max.
     num_ctx: int = field(default_factory=lambda: _env_int("AGENT_NUM_CTX", 6144))
     temperature: float = field(
