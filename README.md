@@ -104,6 +104,27 @@ Optional backends (the harness degrades gracefully without them):
   never resident alongside the 4B.
 - **`transcribe`** — a `whisper` / `whisper-cpp` binary on `PATH`.
 
+## Latency tuning (this chip is slow — ~3 tok/s, prefill-bound)
+
+The first turn of a session spends most of its time *reading* the prompt (prefill).
+The system prompt dominates that. To make it usable:
+
+- **Use the REPL, not one-shot.** `python -m local_agent.main` (no args) keeps the
+  process alive so Ollama's KV cache of the system prompt is reused — turns after the
+  first only prefill the new transcript tokens and are much faster. Each one-shot
+  relaunch throws that warmth away.
+- **Keep the model resident:** start the server with
+  `OLLAMA_KEEP_ALIVE=30m OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve` so it isn't reloaded
+  between tasks.
+- **Use the compact system prompt** to cut ~1070 tokens (~70%) off every turn's prompt
+  overhead, at some cost to the model's in-context examples:
+  ```bash
+  AGENT_SYSTEM_PROMPT=prompts/agent_system_compact.md python -m local_agent.main
+  ```
+  The full `prompts/agent_system.md` stays the default (tool-calling reliability is
+  priority #1); the compact variant is opt-in for speed. Both keep the tool contract
+  identical.
+
 ## Gotchas
 - The vault path **has a space**. pathlib handles it; every shell use is `shlex.quote`d.
 - Run Ollama **CPU-only** on the Dimensity 6300 (Mali Vulkan offload is unreliable).
