@@ -76,31 +76,77 @@ def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
     return base
 
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+
+def _image_bytes(p: Path, max_px: int) -> bytes:
+    """Return image bytes, downscaled so the longest side <= max_px if Pillow is
+    available. Falls back to the raw bytes (no resize) if Pillow isn't installed
+    or anything goes wrong — vision still works, just slower on big photos.
+    """
+    raw = p.read_bytes()
+    if max_px <= 0:
+        return raw
+    try:
+        import io
+
+        from PIL import Image  # optional dep
+    except ImportError:
+        return raw
+    try:
+        with Image.open(io.BytesIO(raw)) as im:
+            longest = max(im.size)
+            if longest <= max_px:
+                return raw
+            scale = max_px / longest
+            new_size = (max(1, int(im.width * scale)), max(1, int(im.height * scale)))
+            im = im.convert("RGB")
+            im = im.resize(new_size)
+            out = io.BytesIO()
+            im.save(out, format="JPEG", quality=85)
+            return out.getvalue()
+    except Exception:  # noqa: BLE001 - any decode/resize failure → use raw
+        return raw
+
+
 def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Run a vision model on an image to describe it, answer a question about it,
+    or read/transcribe text from it (OCR).
+
+    The vision model is loaded ON DEMAND and unloaded right after (keep_alive=0)
+    so it never sits in RAM next to the 4B. Ask for OCR with a question like
+    "Transcribe all text in this image."
+    """
     path = str(args.get("path", "")).strip()
-    question = str(args.get("question", "Describe this image.")).strip()
+    question = str(args.get("question", "Describe this image in detail.")).strip()
     if not path:
         return "error: 'path' is required"
     p = Path(path)
     if not p.exists():
         return f"image not found: {path}"
+    if p.suffix.lower() not in _IMAGE_EXTS:
+        return f"not a recognized image type: {p.suffix} (expected {', '.join(sorted(_IMAGE_EXTS))})"
     if ctx.client is None:
         return "vision unavailable: no model client in context"
+
+    max_px = getattr(ctx.config, "max_image_px", 1024)
     try:
-        img_b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+        data = _image_bytes(p, max_px)
     except OSError as e:
         return f"read error: {e}"
-    # Load the vision model on demand. Ollama swaps models; we never hold two
-    # resident in the harness ourselves.
+    img_b64 = base64.b64encode(data).decode("ascii")
+
     vision_model = getattr(ctx.config, "vision_model", "moondream")
+    keep_alive = getattr(ctx.config, "vision_keep_alive", "0")
     try:
         result = ctx.client.generate(
             question,
             model=vision_model,
-            options={"images": [img_b64]},
+            images=[img_b64],
+            keep_alive=keep_alive,
         )
     except Exception as e:  # noqa: BLE001
-        return f"vision error: {e} (is '{vision_model}' pulled?)"
+        return f"vision error: {e} (is '{vision_model}' pulled? try: ollama pull {vision_model})"
     return result.strip() or "(no description returned)"
 
 

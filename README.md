@@ -89,6 +89,9 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 | `OLLAMA_REMOTE_URL` | _(unset)_ | optional faster Ollama for hybrid routing |
 | `AGENT_REMOTE_MODEL` | `qwen3:30b-a3b-instruct-2507` | model on the remote box |
 | `AGENT_ROUTE` | `local` | `local` / `remote` / `auto` |
+| `AGENT_VISION_MODEL` | `moondream` | vision model for `analyze_image` |
+| `AGENT_VISION_KEEP_ALIVE` | `0` | unload vision model immediately (RAM-safe) |
+| `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
 | `AGENT_ENABLE_BROWSER` | `0` | gate the heavy Playwright tool |
 
 ## Tools
@@ -106,8 +109,14 @@ overwriting `>`, overwriting a vault note, any outbound send).
 Optional backends (the harness degrades gracefully without them):
 - **`browser`** — `pip install playwright && playwright install chromium` and set
   `AGENT_ENABLE_BROWSER=1`. Heavy on Termux; usually run only on a LAN box.
-- **`analyze_image`** — `ollama pull moondream` (or a small Qwen-VL). Loaded on demand,
-  never resident alongside the 4B.
+- **`analyze_image`** — `ollama pull moondream` (or a small Qwen2.5-VL/Qwen3-VL).
+  Describes an image, answers a question about it, or **reads text from it (OCR)** —
+  e.g. `{"path": "...", "question": "Transcribe all text in this image."}`. The vision
+  model is loaded on demand and unloaded right after (`keep_alive=0`) so it never sits
+  in RAM beside the 4B; also set `OLLAMA_MAX_LOADED_MODELS=1` on the server to be sure.
+  Large photos are auto-downscaled to `AGENT_MAX_IMAGE_PX` (1024) if **Pillow** is
+  installed (`pip install Pillow`), which cuts RAM and latency; without Pillow it sends
+  the full image.
 - **`analyze_pdf`** — `pip install pypdf` (pure-Python). Extracts text and, if the
   model client is available, summarizes/answers a task over it. Scanned (image-only)
   PDFs have no extractable text — use `analyze_image`/OCR for those.

@@ -146,6 +146,54 @@ def test_analyze_pdf_graceful_without_pypdf(reg, ctx, tmp_path, monkeypatch):
     assert "install pypdf" in out
 
 
+class _CapturingClient:
+    """Records the kwargs of the last generate() call; returns a canned reply."""
+
+    def __init__(self, reply="a cat sitting on a mat"):
+        self.reply = reply
+        self.last = None
+
+    def generate(self, prompt, **kwargs):
+        self.last = {"prompt": prompt, **kwargs}
+        return self.reply
+
+
+def test_analyze_image_sends_image_and_unloads(reg, tmp_path):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    cfg.max_image_px = 0  # skip Pillow path for a deterministic test
+    client = _CapturingClient()
+    ctx2 = ToolContext(config=cfg, client=client)
+
+    img = tmp_path / "pic.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\nfake-image-bytes")
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "What is in this image?"}, ctx2
+    )
+    assert out == "a cat sitting on a mat"
+    # Image must go top-level (not in options), model = vision model, and the
+    # model must be told to unload (keep_alive=0) so it doesn't sit by the 4B.
+    assert client.last["images"] and isinstance(client.last["images"], list)
+    assert client.last["model"] == cfg.vision_model
+    assert client.last["keep_alive"] == cfg.vision_keep_alive
+
+
+def test_analyze_image_missing_file(reg, ctx):
+    out = reg["analyze_image"].fn({"path": "/nope/x.png"}, ctx)
+    assert "not found" in out
+
+
+def test_analyze_image_rejects_non_image(reg, ctx, tmp_path):
+    txt = tmp_path / "note.txt"
+    txt.write_text("hi")
+    out = reg["analyze_image"].fn({"path": str(txt)}, ctx)
+    assert "not a recognized image type" in out
+
+
 def test_vault_list(reg, ctx):
     write = reg["vault_write"].fn
     write({"path": "folder/x.md", "content": "x", "mode": "create"}, ctx)

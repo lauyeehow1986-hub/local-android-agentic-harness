@@ -24,7 +24,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - web_scrape [S] {"url": str}
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str}
-- analyze_image [S] {"path": str, "question": str}
+- analyze_image [S] {"path": str, "question": str}  (describe / answer about / OCR-read text from an image)
 - analyze_pdf [S] {"path": str, "task": str}
 - transcribe [S] {"path": str}
 - make_slides [G] {"title": str, "outline": [str], "out_path": str}

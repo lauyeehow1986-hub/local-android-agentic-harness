@@ -140,12 +140,20 @@ class OllamaClient:
         model: Optional[str] = None,
         options: Optional[dict[str, Any]] = None,
         on_token=None,
+        images: Optional[list[str]] = None,
+        keep_alive: Optional[Any] = None,
     ) -> str:
         """Single-shot completion returning the full text.
 
         Uses /api/generate with the ReAct transcript as the prompt. The system
         prompt is passed separately. If on_token is given, streams chunks to it
         (the terminal renders them live) while still returning the full text.
+
+        `images` is a list of base64-encoded images for a vision model — Ollama
+        expects it at the top level of the request, NOT inside options.
+        `keep_alive` controls how long the model stays resident (e.g. 0 to unload
+        immediately after — used for the vision model so it never sits alongside
+        the 4B in RAM).
         """
         opts = {
             "num_ctx": self.num_ctx,
@@ -167,6 +175,10 @@ class OllamaClient:
         }
         if system:
             payload["system"] = system
+        if images:
+            payload["images"] = images
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
         if streaming:
             return self._post_stream("/api/generate", payload, on_token)
         result = self._post("/api/generate", payload)

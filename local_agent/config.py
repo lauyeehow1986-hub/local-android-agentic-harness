@@ -70,6 +70,18 @@ class Config:
     vision_model: str = field(
         default_factory=lambda: _env_str("AGENT_VISION_MODEL", "moondream")
     )
+    # How long the vision model stays resident after an analyze_image call. "0"
+    # unloads it immediately so it never sits in RAM alongside the 4B (the phone
+    # can't hold both). Raise (e.g. "5m") if you do many image calls in a row.
+    vision_keep_alive: str = field(
+        default_factory=lambda: _env_str("AGENT_VISION_KEEP_ALIVE", "0")
+    )
+    # Downscale large images so the longest side is <= this many pixels before
+    # sending to the vision model — saves RAM and latency on big phone photos.
+    # Requires Pillow; skipped gracefully if not installed. 0 disables.
+    max_image_px: int = field(
+        default_factory=lambda: _env_int("AGENT_MAX_IMAGE_PX", 1024)
+    )
     # num_ctx: keep small or the KV cache OOM-kills on 8 GB. NOT the 256K max.
     num_ctx: int = field(default_factory=lambda: _env_int("AGENT_NUM_CTX", 6144))
     temperature: float = field(

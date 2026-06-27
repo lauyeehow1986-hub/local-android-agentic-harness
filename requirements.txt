@@ -15,7 +15,10 @@ pytest>=7.0
 # playwright>=1.40
 #
 # Vision (analyze_image) is served by Ollama (pull a small VL model such as
-# `moondream`); no Python package needed here.
+# `moondream`). No Python package is required, but Pillow enables auto-downscaling
+# of large photos (less RAM / latency):
+#   pip install Pillow
+# Pillow>=10.0
 #
 # transcribe uses an external `whisper`/`whisper-cpp` binary on PATH; no
 # Python package required.
