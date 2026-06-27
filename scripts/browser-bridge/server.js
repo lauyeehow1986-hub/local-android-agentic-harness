@@ -12,6 +12,15 @@
 //   export AGENT_BROWSER_REMOTE_URL=http://127.0.0.1:3000
 // then ask the agent to scrape a JS page with rendering.
 
+// Termux's recent Node (v26+) reports process.platform === 'android', which
+// current playwright-core hard-rejects at registry init ("Unsupported platform:
+// android") — before executablePath is ever consulted. Spoof it to 'linux'
+// BEFORE requiring playwright-core; we provide our own Chromium via
+// executablePath, so no browser download/registry lookup actually happens.
+if (process.platform === 'android') {
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+}
+
 const http = require('http');
 const { chromium } = require('playwright-core');
 

@@ -52,3 +52,8 @@ bridge drives headless Chromium and returns the rendered HTML.
 - This bridge does **render-a-URL** only (the common "read this dynamic page" case). For
   interactive click/fill flows, run the harness's `browser` tool on a desktop.
 - Keep `--no-sandbox` — Android has no user namespaces for Chromium's sandbox.
+- **`Unsupported platform: android`**: recent Termux Node (v26+) reports
+  `process.platform === 'android'`, which current playwright-core rejects at startup.
+  `server.js` works around this by spoofing `process.platform` to `'linux'` before
+  requiring playwright-core (we supply Chromium via `executablePath`, so no browser
+  download happens). If you adapt the script, keep that spoof at the very top.
