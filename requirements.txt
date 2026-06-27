@@ -6,6 +6,10 @@
 pytest>=7.0
 
 # --- Optional, install only if you enable the heavy tools ---
+# PDF reading (analyze_pdf) — pure-Python, ARM-friendly:
+#   pip install pypdf
+# pypdf>=4.0
+#
 # Browser tool (Playwright) — heavy on Termux; typically run on the LAN box:
 #   pip install playwright && playwright install chromium
 # playwright>=1.40

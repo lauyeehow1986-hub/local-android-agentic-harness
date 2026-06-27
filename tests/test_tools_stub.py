@@ -24,6 +24,7 @@ CONTRACT_TOOLS = {
     "browser",
     "analyze_data",
     "analyze_image",
+    "analyze_pdf",
     "transcribe",
     "make_slides",
     "make_html_report",
@@ -97,6 +98,52 @@ def test_vault_search(reg, ctx):
     write({"path": "notes/omop.md", "content": "OMOP date mapping notes", "mode": "create"}, ctx)
     out = reg["vault_search"].fn({"query": "OMOP date", "limit": 5}, ctx)
     assert "omop.md" in out
+
+
+def test_vault_search_ranks_by_relevance(reg, ctx):
+    write = reg["vault_write"].fn
+    # 'aaa.md' is alphabetically first but only mentions the term once;
+    # 'zzz-recurrent.md' has a filename match + multiple hits → should rank first.
+    write({"path": "aaa.md", "content": "a passing mention of recurrent here", "mode": "create"}, ctx)
+    write(
+        {
+            "path": "zzz-recurrent.md",
+            "content": "# Recurrent events\nrecurrent recurrent recurrent analysis",
+            "mode": "create",
+        },
+        ctx,
+    )
+    out = reg["vault_search"].fn({"query": "recurrent", "limit": 5}, ctx)
+    first_line = out.splitlines()[0]
+    assert "zzz-recurrent.md" in first_line  # most relevant first, not alphabetical
+
+
+def test_vault_search_no_match(reg, ctx):
+    out = reg["vault_search"].fn({"query": "nonexistentxyz", "limit": 5}, ctx)
+    assert "no matches" in out
+
+
+def test_analyze_pdf_missing_file(reg, ctx):
+    out = reg["analyze_pdf"].fn({"path": "/nope/x.pdf"}, ctx)
+    assert "not found" in out
+
+
+def test_analyze_pdf_graceful_without_pypdf(reg, ctx, tmp_path, monkeypatch):
+    # Simulate pypdf not installed: the import inside _extract_pdf_text raises.
+    import builtins
+
+    fake = tmp_path / "doc.pdf"
+    fake.write_bytes(b"%PDF-1.4 fake")
+    real_import = builtins.__import__
+
+    def blocked(name, *a, **k):
+        if name == "pypdf":
+            raise ImportError("no pypdf")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    out = reg["analyze_pdf"].fn({"path": str(fake)}, ctx)
+    assert "install pypdf" in out
 
 
 def test_vault_list(reg, ctx):

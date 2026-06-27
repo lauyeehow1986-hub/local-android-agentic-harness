@@ -89,7 +89,7 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 
 `vault_search` `vault_read` `vault_list` `vault_write`*(G)* ·
 `web_search` `web_scrape` `browser`*(G)* ·
-`analyze_data` `analyze_image` `transcribe` ·
+`analyze_data` `analyze_image` `analyze_pdf` `transcribe` ·
 `make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
 `shell`*(G)* `git_sync`*(G)* `request_approval`
 
@@ -102,6 +102,9 @@ Optional backends (the harness degrades gracefully without them):
   `AGENT_ENABLE_BROWSER=1`. Heavy on Termux; usually run only on a LAN box.
 - **`analyze_image`** — `ollama pull moondream` (or a small Qwen-VL). Loaded on demand,
   never resident alongside the 4B.
+- **`analyze_pdf`** — `pip install pypdf` (pure-Python). Extracts text and, if the
+  model client is available, summarizes/answers a task over it. Scanned (image-only)
+  PDFs have no extractable text — use `analyze_image`/OCR for those.
 - **`transcribe`** — a `whisper` / `whisper-cpp` binary on `PATH`.
 
 ## Latency tuning (this chip is slow — ~3 tok/s, prefill-bound)

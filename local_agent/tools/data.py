@@ -104,6 +104,67 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
     return result.strip() or "(no description returned)"
 
 
+def _extract_pdf_text(path: Path, max_pages: int = 50) -> tuple[str, int]:
+    """Return (text, n_pages). Pure-Python via pypdf; raises if unavailable."""
+    from pypdf import PdfReader  # optional dep; caller handles ImportError
+
+    reader = PdfReader(str(path))
+    pages = reader.pages
+    chunks: list[str] = []
+    for i, page in enumerate(pages):
+        if i >= max_pages:
+            break
+        try:
+            chunks.append(page.extract_text() or "")
+        except Exception:  # noqa: BLE001 - skip a bad page, keep going
+            continue
+    return "\n".join(chunks).strip(), len(pages)
+
+
+def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Extract text from a PDF and (optionally) summarize/answer a task over it.
+
+    SAFE: read-only. Degrades clearly if pypdf isn't installed or the PDF has no
+    extractable text (scanned image — suggest analyze_image/OCR instead).
+    """
+    path = str(args.get("path", "")).strip()
+    task = str(args.get("task", "Summarize this document.")).strip()
+    if not path:
+        return "error: 'path' is required"
+    p = Path(path)
+    if not p.exists():
+        return f"pdf not found: {path}"
+    try:
+        text, n_pages = _extract_pdf_text(p)
+    except ImportError:
+        return "pdf unavailable: install pypdf (`pip install pypdf`) to read PDFs."
+    except Exception as e:  # noqa: BLE001
+        return f"pdf read error: {e}"
+
+    if not text:
+        return (
+            f"no extractable text in {p.name} ({n_pages} pages) — it's likely a "
+            "scanned image. Try analyze_image on a page render, or OCR first."
+        )
+
+    # Cap the text fed to the small model; long context destroys latency.
+    excerpt = text[:6000]
+    if ctx.client is None:
+        # No model available — return a useful extractive preview.
+        head = " ".join(excerpt.split())[:1200]
+        return f"{p.name} ({n_pages} pages). Text preview:\n{head}"
+
+    prompt = (
+        f"Document: {p.name} ({n_pages} pages). Content (may be truncated):\n"
+        f"{excerpt}\n\nTask: {task}\nAnswer concisely."
+    )
+    try:
+        answer = ctx.client.generate(prompt, system="You summarize documents tersely.")
+    except Exception as e:  # noqa: BLE001
+        return f"pdf summarize error: {e} (text extracted OK, {n_pages} pages)"
+    return f"{p.name} ({n_pages} pages):\n{answer.strip()}"
+
+
 def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
     path = str(args.get("path", "")).strip()
     if not path:
@@ -150,6 +211,14 @@ TOOLS = [
         required=("path",),
         optional=("question",),
         description="Vision model on an image (loaded on demand).",
+    ),
+    Tool(
+        name="analyze_pdf",
+        tag="SAFE",
+        fn=analyze_pdf,
+        required=("path",),
+        optional=("task",),
+        description="Extract text from a PDF and summarize/answer a task over it.",
     ),
     Tool(
         name="transcribe",

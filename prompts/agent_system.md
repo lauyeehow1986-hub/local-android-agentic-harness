@@ -100,6 +100,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Data & files
 - `analyze_data` [SAFE] — run analysis on a CSV/dataset. `{"path": str, "task": str}`
 - `analyze_image` [SAFE] — vision model on an image (loads a small VL model, e.g. Qwen3-VL / moondream, on demand). `{"path": str, "question": str}`
+- `analyze_pdf` [SAFE] — extract text from a PDF and summarize/answer a task over it. `{"path": str, "task": str}`
 - `transcribe` [SAFE] — speech-to-text on an audio file. `{"path": str}`
 
 ### Generation

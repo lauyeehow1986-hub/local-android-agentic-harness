@@ -25,6 +25,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str}
 - analyze_image [S] {"path": str, "question": str}
+- analyze_pdf [S] {"path": str, "task": str}
 - transcribe [S] {"path": str}
 - make_slides [G] {"title": str, "outline": [str], "out_path": str}
 - make_html_report [G] {"title": str, "sections": [...], "out_path": str}

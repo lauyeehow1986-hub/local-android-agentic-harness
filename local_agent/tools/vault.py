@@ -72,29 +72,65 @@ def vault_search(args: dict[str, Any], ctx: ToolContext) -> str:
         return "error: 'query' is required"
     if not root.exists():
         return f"vault not found at {root}"
+
+    # Score each note so the MOST relevant surfaces first, not the first one
+    # alphabetically. Signals: whole-phrase hits (weighted), per-term hits,
+    # filename match, and a title (first # heading) match.
     q = query.lower()
-    hits: list[str] = []
-    for p in sorted(root.rglob("*.md")):
+    terms = [t for t in q.split() if t]
+    scored: list[tuple[float, str, str]] = []  # (score, rel, snippet)
+
+    for p in root.rglob("*.md"):
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         low = text.lower()
-        if q in low or q in p.name.lower():
-            # Grab a short snippet around the first match for context.
-            idx = low.find(q)
-            snippet = ""
-            if idx != -1:
-                start = max(0, idx - 40)
-                end = min(len(text), idx + 60)
-                snippet = text[start:end].replace("\n", " ").strip()
-            rel = p.relative_to(root)
-            hits.append(f"{rel}: …{snippet}…" if snippet else str(rel))
-            if len(hits) >= limit:
+        name_low = p.name.lower()
+
+        phrase_hits = low.count(q)
+        term_hits = sum(low.count(t) for t in terms)
+        if phrase_hits == 0 and term_hits == 0 and q not in name_low:
+            continue
+
+        score = 0.0
+        score += phrase_hits * 5.0          # exact phrase is strongest
+        score += term_hits * 1.0            # any term occurrence
+        if q in name_low:
+            score += 8.0                    # filename match — very relevant
+        # Title match (first markdown heading).
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("#"):
+                if q in s.lower() or any(t in s.lower() for t in terms):
+                    score += 4.0
                 break
-    if not hits:
+
+        # Snippet around the best match (phrase first, else first term).
+        idx = low.find(q)
+        if idx == -1:
+            idx = min((low.find(t) for t in terms if low.find(t) != -1), default=-1)
+        snippet = ""
+        if idx != -1:
+            start = max(0, idx - 50)
+            end = min(len(text), idx + 110)
+            snippet = " ".join(text[start:end].split())
+        rel = str(p.relative_to(root))
+        scored.append((score, rel, snippet))
+
+    if not scored:
         return f"no matches for '{query}'"
-    return "\n".join(hits)
+
+    # Highest score first; stable on path for ties.
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    lines = [
+        f"{rel}: …{snip}…" if snip else rel
+        for _, rel, snip in scored[:limit]
+    ]
+    extra = len(scored) - len(lines)
+    if extra > 0:
+        lines.append(f"(+{extra} more match{'es' if extra != 1 else ''})")
+    return "\n".join(lines)
 
 
 def vault_write(args: dict[str, Any], ctx: ToolContext) -> str:
