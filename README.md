@@ -103,7 +103,7 @@ One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"
 
 `vault_search` `vault_read` `vault_list` `vault_write`*(G)* ·
 `web_search` `web_scrape` `browser`*(G)* ·
-`analyze_data` `analyze_image` `analyze_pdf` `transcribe` ·
+`analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
 `shell`*(G)* `git_sync`*(G)* `request_approval`
 
@@ -137,6 +137,12 @@ Optional backends (the harness degrades gracefully without them):
   openai-whisper handles formats itself. Saves the full transcript to
   `<audio>.transcript.txt` and, if you pass a `task`, summarizes / extracts action
   items with a chunked map-reduce so long meetings fit the small context window.
+  Pass `"diarize": true` for **speaker labels** — this needs `whisperx` + a HuggingFace
+  token (`HF_TOKEN`) and is heavy, so run it on the LAN/desktop box, not the phone.
+- **`meeting_notes`** — one step up from `transcribe`: takes a recording **or** an existing
+  transcript and returns a ready-to-save Markdown note with `## Summary / ## Decisions /
+  ## Action Items` (owner table) `/ ## Follow-ups`, plus YAML frontmatter. The agent then
+  saves it with `vault_write` (approved in `hitl`). Same Whisper backends as `transcribe`.
 
 ## Example prompts (what you can ask at `yh>`)
 
@@ -154,6 +160,7 @@ Optional backends (the harness degrades gracefully without them):
 | "Summarize the PDF at /sdcard/Download/paper.pdf" | `analyze_pdf` (text, or OCR if scanned) |
 | "Transcribe the meeting at /sdcard/Recordings/standup.m4a and list action items" | `transcribe` (task=action items) |
 | "Transcribe …/meeting.m4a and save the notes to my vault" | `transcribe` → `request_approval` → `vault_write` |
+| "Make meeting notes from …/sync.m4a and file them under Meetings/" | `meeting_notes` → `request_approval` → `vault_write` |
 | "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
 | "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
 | "Commit and push my vault" | `request_approval` → `git_sync` |

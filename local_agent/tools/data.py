@@ -436,18 +436,90 @@ def _ensure_wav16k(p: Path):
     return tmp, tmp
 
 
+def _whisper_hint(kind: str) -> str:
+    """Map a backend RuntimeError code to an actionable user message."""
+    if kind == "no-backend":
+        return (
+            "transcribe unavailable: no speech backend found. Install one: "
+            "whisper.cpp (`pkg install whisper.cpp` or build it; set "
+            "AGENT_WHISPER_CPP_MODEL to a ggml model), or `pip install "
+            "openai-whisper`, or `pip install faster-whisper`. For non-WAV "
+            "audio also install ffmpeg (`pkg install ffmpeg`)."
+        )
+    if kind == "ffmpeg-needed":
+        return "transcribe needs ffmpeg to convert this audio to WAV: `pkg install ffmpeg`."
+    if kind == "whispercpp-model-needed":
+        return (
+            "whisper.cpp found but no model set. Point AGENT_WHISPER_CPP_MODEL at a "
+            "ggml model file (e.g. ggml-base.en.bin)."
+        )
+    if kind == "diarize-unavailable":
+        return (
+            "speaker diarization needs whisperx (`pip install whisperx`) and a "
+            "HuggingFace token for pyannote — heavy; run it on the LAN/desktop box, "
+            "not the phone. Falling back: re-run without diarization."
+        )
+    return f"transcribe error: {kind}"
+
+
+def _audio_to_text(p: Path, ctx: ToolContext, language: str, *, diarize: bool = False):
+    """Transcribe audio to text. Returns (text, error_message). Exactly one is set."""
+    try:
+        if diarize:
+            return _transcribe_diarized(p, ctx, language), None
+        return _transcribe_audio(p, ctx, language), None
+    except RuntimeError as e:
+        return None, _whisper_hint(str(e))
+    except Exception as e:  # noqa: BLE001
+        return None, f"transcribe error: {e}"
+
+
+def _transcribe_diarized(p: Path, ctx: ToolContext, language: str) -> str:
+    """Speaker-labeled transcript via whisperx (desktop/LAN-grade; heavy deps).
+
+    Raises RuntimeError('diarize-unavailable') if whisperx isn't installed.
+    Returns text with '[SPEAKER_xx] ...' lines. Errors are surfaced, not raised
+    as tracebacks, so the loop stays alive.
+    """
+    try:
+        import os
+
+        import whisperx  # optional, heavy
+    except ImportError:
+        raise RuntimeError("diarize-unavailable")
+    model_name = getattr(ctx.config, "whisper_model", "base")
+    hf_token = os.environ.get("HF_TOKEN", "")
+    audio = whisperx.load_audio(str(p))
+    model = whisperx.load_model(model_name, device="cpu", compute_type="int8")
+    result = model.transcribe(audio, language=language or None)
+    align_model, meta = whisperx.load_align_model(
+        language_code=result["language"], device="cpu"
+    )
+    result = whisperx.align(result["segments"], align_model, meta, audio, "cpu")
+    diarize_model = whisperx.DiarizationPipeline(use_auth_token=hf_token, device="cpu")
+    diarize_segments = diarize_model(audio)
+    result = whisperx.assign_word_speakers(diarize_segments, result)
+    lines: list[str] = []
+    for seg in result.get("segments", []):
+        spk = seg.get("speaker", "SPEAKER_?")
+        lines.append(f"[{spk}] {seg.get('text', '').strip()}")
+    return "\n".join(lines).strip()
+
+
 def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
     """Speech-to-text for meetings: transcribe an audio/video file, save the full
     transcript next to it, and (optionally) summarize / extract action items.
 
-    args: {"path": str, "task": str?, "language": str?}
+    args: {"path": str, "task": str?, "language": str?, "diarize": bool?}
       - task: if given (e.g. "summarize decisions and action items"), runs a
         map-reduce summary over the transcript with the local model.
       - language: e.g. "en"; omit to auto-detect.
+      - diarize: label speakers (needs whisperx; desktop/LAN-grade).
     """
     path = str(args.get("path", "")).strip()
     task = str(args.get("task", "")).strip()
     language = str(args.get("language", "") or getattr(ctx.config, "whisper_language", "")).strip()
+    diarize = bool(args.get("diarize", False))
     if not path:
         return "error: 'path' is required"
     p = Path(path)
@@ -456,28 +528,9 @@ def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
     if p.suffix.lower() not in _AUDIO_EXTS:
         return f"unrecognized audio type: {p.suffix} (expected {', '.join(sorted(_AUDIO_EXTS))})"
 
-    try:
-        text = _transcribe_audio(p, ctx, language)
-    except RuntimeError as e:
-        kind = str(e)
-        if kind == "no-backend":
-            return (
-                "transcribe unavailable: no speech backend found. Install one: "
-                "whisper.cpp (`pkg install whisper.cpp` or build it; set "
-                "AGENT_WHISPER_CPP_MODEL to a ggml model), or `pip install "
-                "openai-whisper`, or `pip install faster-whisper`. For non-WAV "
-                "audio also install ffmpeg (`pkg install ffmpeg`)."
-            )
-        if kind == "ffmpeg-needed":
-            return "transcribe needs ffmpeg to convert this audio to WAV: `pkg install ffmpeg`."
-        if kind == "whispercpp-model-needed":
-            return (
-                "whisper.cpp found but no model set. Point AGENT_WHISPER_CPP_MODEL at a "
-                "ggml model file (e.g. ggml-base.en.bin)."
-            )
-        return f"transcribe error: {e}"
-    except Exception as e:  # noqa: BLE001
-        return f"transcribe error: {e}"
+    text, err = _audio_to_text(p, ctx, language, diarize=diarize)
+    if err:
+        return err
 
     if not text:
         return f"transcribe produced no text for {p.name} (silent or unsupported audio?)"
@@ -502,6 +555,85 @@ def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
 
     preview = " ".join(text.split())[:800]
     return f"{header}\nPreview: {preview}…"
+
+
+_MEETING_TEMPLATE = (
+    "Write structured meeting notes in Markdown from the transcript. Use EXACTLY "
+    "these sections and nothing else:\n"
+    "## Summary\n(2-4 sentences)\n"
+    "## Decisions\n(- bullet list)\n"
+    "## Action Items\n(a Markdown table: | Owner | Action | Due |)\n"
+    "## Follow-ups\n(- bullet list)\n"
+    "Be terse and factual; include only what's in the transcript. If a section has "
+    "nothing, write '- none'."
+)
+
+_TRANSCRIPT_EXTS = {".txt", ".md", ".vtt", ".srt"}
+
+
+def meeting_notes(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Turn a meeting recording (or an existing transcript) into a structured
+    Markdown note: Summary / Decisions / Action Items (owner table) / Follow-ups.
+
+    args: {"path": str, "title": str?, "context": str?, "language": str?, "diarize": bool?}
+      - path: an audio file (transcribed first) or a transcript .txt/.md/.vtt/.srt.
+      - context: optional hints (meeting title, attendees) folded into the prompt.
+
+    Returns ready-to-save Markdown (with YAML frontmatter). SAFE: it produces
+    text; the agent saves it with vault_write (approved in hitl).
+    """
+    import datetime
+
+    path = str(args.get("path", "")).strip()
+    title = str(args.get("title", "")).strip()
+    context = str(args.get("context", "")).strip()
+    language = str(args.get("language", "") or getattr(ctx.config, "whisper_language", "")).strip()
+    diarize = bool(args.get("diarize", False))
+    if not path:
+        return "error: 'path' is required"
+    if ctx.client is None:
+        return "meeting_notes needs the local model to summarize."
+    p = Path(path)
+    if not p.exists():
+        return f"file not found: {path}"
+
+    # Get the transcript text — either read it, or transcribe the audio first.
+    suffix = p.suffix.lower()
+    if suffix in _TRANSCRIPT_EXTS:
+        text = p.read_text(encoding="utf-8", errors="ignore").strip()
+        source = f"transcript {p.name}"
+    elif suffix in _AUDIO_EXTS:
+        text, err = _audio_to_text(p, ctx, language, diarize=diarize)
+        if err:
+            return err
+        if not text:
+            return f"no speech transcribed from {p.name}"
+        # Save the raw transcript alongside the audio for the record.
+        try:
+            p.with_suffix(p.suffix + ".transcript.txt").write_text(text, encoding="utf-8")
+        except OSError:
+            pass
+        source = f"audio {p.name}"
+    else:
+        return f"unsupported input: {p.suffix} (give an audio file or a transcript)"
+
+    if not text:
+        return f"empty transcript: {p.name}"
+
+    task = _MEETING_TEMPLATE + (f"\nMeeting context: {context}" if context else "")
+    try:
+        body = _summarize_long(ctx, text, task)
+    except Exception as e:  # noqa: BLE001
+        return f"meeting_notes summary failed: {e}"
+
+    today = datetime.date.today().isoformat()
+    if not title:
+        title = f"Meeting {today}"
+    frontmatter = (
+        f"---\ntitle: {title}\ndate: {today}\ntype: meeting\nsource: {source}\n---\n\n"
+        f"# {title}\n\n"
+    )
+    return frontmatter + body.strip() + "\n"
 
 
 TOOLS = [
@@ -534,7 +666,15 @@ TOOLS = [
         tag="SAFE",
         fn=transcribe,
         required=("path",),
-        optional=("task", "language"),
+        optional=("task", "language", "diarize"),
         description="Transcribe meeting audio; optionally summarize / extract action items.",
+    ),
+    Tool(
+        name="meeting_notes",
+        tag="SAFE",
+        fn=meeting_notes,
+        required=("path",),
+        optional=("title", "context", "language", "diarize"),
+        description="Audio/transcript → structured meeting note (summary, decisions, action items).",
     ),
 ]

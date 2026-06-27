@@ -31,3 +31,6 @@ pytest>=7.0
 #   or: pip install openai-whisper
 #   or: pip install faster-whisper
 # Non-WAV audio also needs ffmpeg (`pkg install ffmpeg`).
+# Speaker diarization (transcribe/meeting_notes diarize=true) — heavy, run on a
+# desktop/LAN box, not the phone:
+#   pip install whisperx   # + HF_TOKEN env for pyannote models

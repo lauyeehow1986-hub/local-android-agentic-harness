@@ -26,6 +26,7 @@ CONTRACT_TOOLS = {
     "analyze_image",
     "analyze_pdf",
     "transcribe",
+    "meeting_notes",
     "make_slides",
     "make_html_report",
     "rephrase",
@@ -189,6 +190,73 @@ def test_transcribe_rejects_non_audio(reg, ctx, tmp_path):
     txt.write_text("hi")
     out = reg["transcribe"].fn({"path": str(txt)}, ctx)
     assert "unrecognized audio type" in out
+
+
+def test_meeting_notes_from_transcript(reg, tmp_path):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(
+        reply="## Summary\nShipped v10.\n## Decisions\n- ship\n## Action Items\n| Owner | Action | Due |\n| Bob | fix bug | Fri |\n## Follow-ups\n- none"
+    )
+    ctx2 = ToolContext(config=cfg, client=client)
+    tx = tmp_path / "standup.txt"
+    tx.write_text("Alice: we shipped v10. Bob will fix the bug by Friday.")
+
+    out = reg["meeting_notes"].fn({"path": str(tx), "title": "Standup"}, ctx2)
+    assert out.startswith("---")                 # YAML frontmatter
+    assert "type: meeting" in out
+    assert "# Standup" in out
+    assert "## Action Items" in out
+    assert "Bob" in out
+
+
+def test_meeting_notes_from_audio(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="## Summary\nok\n## Decisions\n- none\n## Action Items\n| Owner | Action | Due |\n## Follow-ups\n- none")
+    ctx2 = ToolContext(config=cfg, client=client)
+    audio = tmp_path / "meeting.m4a"
+    audio.write_bytes(b"fake")
+
+    monkeypatch.setattr(data, "_audio_to_text", lambda p, c, lang, diarize=False: ("transcript words", None))
+    out = reg["meeting_notes"].fn({"path": str(audio)}, ctx2)
+    assert "type: meeting" in out
+    # raw transcript saved alongside the audio
+    assert (audio.with_suffix(audio.suffix + ".transcript.txt")).exists()
+
+
+def test_meeting_notes_needs_model(reg, ctx, tmp_path):
+    tx = tmp_path / "t.txt"
+    tx.write_text("hi")
+    out = reg["meeting_notes"].fn({"path": str(tx)}, ctx)  # ctx.client is None
+    assert "needs the local model" in out
+
+
+def test_transcribe_diarize_unavailable_hint(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    audio = tmp_path / "rec.wav"
+    audio.write_bytes(b"x")
+
+    def needs_whisperx(p, c, lang):
+        raise RuntimeError("diarize-unavailable")
+
+    monkeypatch.setattr(data, "_transcribe_diarized", needs_whisperx)
+    out = reg["transcribe"].fn({"path": str(audio), "diarize": True}, ctx2)
+    assert "whisperx" in out.lower()
 
 
 def test_summarize_long_map_reduce(monkeypatch):
