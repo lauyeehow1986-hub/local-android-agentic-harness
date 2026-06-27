@@ -43,6 +43,24 @@ class OllamaClient:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                 body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            # Server IS reachable but returned an error status. Surface its body
+            # — a 404 here almost always means the model isn't pulled, and
+            # Ollama puts {"error": "model 'X' not found"} in the response.
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:  # noqa: BLE001
+                pass
+            hint = ""
+            if e.code == 404 and "not found" in detail.lower():
+                hint = (
+                    f" — model '{payload.get('model', '?')}' is not pulled. "
+                    f"Run: ollama pull {payload.get('model', '?')}"
+                )
+            raise OllamaError(
+                f"Ollama returned HTTP {e.code} for {path}: {detail}{hint}"
+            ) from e
         except urllib.error.URLError as e:
             raise OllamaError(f"cannot reach Ollama at {url}: {e}") from e
         try:
