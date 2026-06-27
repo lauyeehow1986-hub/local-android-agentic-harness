@@ -279,16 +279,17 @@ def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
     try:
         text, n_pages = _extract_pdf_text(p)
     except ImportError:
-        return (
-            "pdf unavailable: install a PDF reader — `pip install pymupdf` (more "
-            "robust) or `pip install pypdf` — to read PDFs."
-        )
-    except Exception as e:  # noqa: BLE001
-        return f"pdf read error: {e}"
+        # No text-extraction backend installed. We may still be able to OCR if a
+        # renderer is present, so route to the OCR fallback rather than dead-end.
+        text, n_pages = "", 0
+    except Exception:  # noqa: BLE001
+        # The text parser failed (encrypted/corrupt for it, odd encoding, the
+        # "codec error" case). The PDF may still render fine — fall back to OCR.
+        text, n_pages = "", 0
 
     if not text:
-        # Scanned/image-only PDF: fall back to rendering pages and OCR'ing them
-        # with the vision model.
+        # No extractable text (scanned, or extraction failed): render pages and
+        # OCR them with the vision model.
         return _analyze_pdf_ocr(p, n_pages, task, ctx)
 
     # Cap the text fed to the small model; long context destroys latency.
@@ -321,9 +322,10 @@ def _analyze_pdf_ocr(p: Path, n_pages: int, task: str, ctx: ToolContext) -> str:
         pages = _render_pdf_pages(p, max_pages)
     except RuntimeError:
         return (
-            f"no extractable text in {p.name} ({n_pages} pages) — it's scanned. To OCR "
-            "it, install a PDF renderer: `pip install pymupdf` (preferred) or "
-            "`pip install pdf2image` + the poppler binary (`pkg install poppler`)."
+            f"couldn't read text from {p.name} and can't render it to OCR. On Termux: "
+            "`pkg install poppler && pip install pdf2image` (the installable renderer; "
+            "pymupdf won't build on-device). On desktop/LAN: `pip install pymupdf`. For "
+            "text PDFs, `pip install pypdf` also helps."
         )
     except Exception as e:  # noqa: BLE001
         return f"pdf render error: {e}"

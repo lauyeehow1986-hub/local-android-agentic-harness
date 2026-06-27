@@ -122,9 +122,16 @@ Optional backends (the harness degrades gracefully without them):
   Large photos are auto-downscaled to `AGENT_MAX_IMAGE_PX` (1024) if **Pillow** is
   installed (`pip install Pillow`), which cuts RAM and latency; without Pillow it sends
   the full image.
-- **`analyze_pdf`** — `pip install pymupdf` (most robust — handles encrypted and
-  awkward PDFs) and/or `pip install pypdf`; the tool tries PyMuPDF first, then pypdf.
-  Extracts text and, if the model client is available, summarizes/answers a task over it. **Scanned (image-only)
+- **`analyze_pdf`** — text extraction tries **PyMuPDF** (most robust, handles
+  encrypted/awkward PDFs) then **pypdf**. If extraction yields nothing *or fails* (e.g.
+  a "codec error" on an encrypted/oddly-encoded PDF that still opens in a viewer), it
+  **auto-falls-back to OCR**: render the pages and read them with the vision model.
+  - **On Termux:** `pip install pypdf` for text; PyMuPDF **won't build on-device**, so
+    for the OCR fallback use `pkg install poppler && pip install pdf2image` (+
+    `ollama pull moondream`). That combination handles text PDFs *and* scanned/encrypted
+    ones without compiling any C extensions.
+  - **On desktop/LAN:** `pip install pymupdf` alone covers almost everything (text +
+    rendering). **Scanned (image-only)
   PDFs are handled automatically**: when there's no extractable text it renders the
   first `AGENT_PDF_OCR_MAX_PAGES` pages and OCRs them with the vision model. The OCR
   fallback needs a PDF renderer — `pip install pymupdf` (preferred, no system binary)

@@ -346,22 +346,48 @@ def test_analyze_pdf_scanned_no_renderer(reg, tmp_path, monkeypatch):
     assert "pymupdf" in out.lower()
 
 
-def test_analyze_pdf_graceful_without_pypdf(reg, ctx, tmp_path, monkeypatch):
-    # Simulate pypdf not installed: the import inside _extract_pdf_text raises.
-    import builtins
+def test_analyze_pdf_extract_failure_routes_to_ocr(reg, ctx, tmp_path, monkeypatch):
+    """If text extraction fails (no backend, or encrypted/corrupt for the parser
+    — the 'codec error' case), analyze_pdf should fall back to the OCR path
+    rather than dead-ending."""
+    from local_agent.tools import data
 
     fake = tmp_path / "doc.pdf"
     fake.write_bytes(b"%PDF-1.4 fake")
-    real_import = builtins.__import__
 
-    def blocked(name, *a, **k):
-        if name == "pypdf":
-            raise ImportError("no pypdf")
-        return real_import(name, *a, **k)
+    def boom(p, max_pages=50):
+        raise ValueError("codec error")  # simulate the parser choking
 
-    monkeypatch.setattr(builtins, "__import__", blocked)
+    monkeypatch.setattr(data, "_extract_pdf_text", boom)
+    # ctx.client is None → OCR path reports graceful (no vision client) instead
+    # of surfacing the raw codec error.
     out = reg["analyze_pdf"].fn({"path": str(fake)}, ctx)
-    assert "install pypdf" in out
+    assert "vision client" in out or "OCR" in out or "scanned" in out
+
+
+def test_analyze_pdf_no_backend_hint(reg, tmp_path, monkeypatch):
+    """No text backend AND no renderer → a clear install hint (Termux-friendly)."""
+    from local_agent.tools import data
+
+    fake = tmp_path / "doc.pdf"
+    fake.write_bytes(b"%PDF-1.4 fake")
+    client = _CapturingClient()  # has a vision client so we reach the renderer step
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx3 = ToolContext(config=cfg, client=client)
+
+    monkeypatch.setattr(data, "_extract_pdf_text", lambda p, max_pages=50: ("", 0))
+
+    def no_render(p, n):
+        raise RuntimeError("no-backend")
+
+    monkeypatch.setattr(data, "_render_pdf_pages", no_render)
+    out = reg["analyze_pdf"].fn({"path": str(fake)}, ctx3)
+    assert "pdf2image" in out and "poppler" in out
 
 
 class _CapturingClient:

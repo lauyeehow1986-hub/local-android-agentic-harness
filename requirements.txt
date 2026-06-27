@@ -6,14 +6,15 @@
 pytest>=7.0
 
 # --- Optional, install only if you enable the heavy tools ---
-# PDF reading (analyze_pdf) — pure-Python, ARM-friendly:
-#   pip install pypdf
-# pypdf>=4.0
+# PDF reading (analyze_pdf):
+#   Termux:  pip install pypdf          # pure-Python text extraction
+#   Desktop: pip install pymupdf        # most robust (text + render); does NOT
+#                                       # build on Termux/aarch64 — skip it there
 #
-# Scanned/image-only PDF OCR (analyze_pdf fallback) — a renderer + a vision model:
-#   pip install pymupdf          # preferred, no system binary
-#   # or: pip install pdf2image && pkg install poppler
-# pymupdf>=1.24
+# Scanned/encrypted PDF OCR fallback — a renderer + a vision model:
+#   Termux:  pkg install poppler && pip install pdf2image   # installable on-device
+#   Desktop: pip install pymupdf
+#   plus a vision model: ollama pull moondream
 #
 # Browser tool (Playwright) — heavy on Termux; typically run on the LAN box:
 #   pip install playwright && playwright install chromium
