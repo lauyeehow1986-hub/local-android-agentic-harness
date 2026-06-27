@@ -288,6 +288,9 @@ pointing at the `.bin`, and `ffmpeg` (it auto-converts m4a/opus/mp3 → 16 kHz W
 
 ---
 
+> **Full clean install from scratch:** see **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)** —
+> an ordered, verified step-by-step (core + each optional capability + a troubleshooting table).
+
 ## What YOU need to do (setup checklist)
 
 See the device-side steps above. The short version:
