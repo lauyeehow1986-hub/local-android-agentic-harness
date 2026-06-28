@@ -144,6 +144,8 @@ your hands by design.
 | `AGENT_VISION_KEEP_ALIVE` | `0` | unload vision model immediately (RAM-safe) |
 | `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
 | `AGENT_PDF_OCR_MAX_PAGES` | `5` | pages to render + OCR for scanned PDFs |
+| `AGENT_OCR_ENGINE` | `auto` | `auto`/`tesseract`/`vision` for reading text |
+| `AGENT_TESSERACT_LANG` | `eng` | Tesseract language(s), e.g. `eng+chi_sim` |
 | `AGENT_WHISPER_BACKEND` | `auto` | `auto`/`whisper`/`whispercpp`/`faster` |
 | `AGENT_WHISPER_MODEL` | `base` | model for openai/faster-whisper (tiny…large) |
 | `AGENT_WHISPER_CPP_MODEL` | _(unset)_ | path to a ggml model for whisper.cpp |
@@ -178,14 +180,15 @@ Optional backends (the harness degrades gracefully without them):
     `AGENT_ENABLE_BROWSER=1`. (Hybrid routing sends only the LLM to the LAN box, not tool
     execution, so the local browser tool can't be "routed" from the phone.)
   - For plain static pages, `web_scrape` with no render works on-device already.
-- **`analyze_image`** — `ollama pull moondream` (or a small Qwen2.5-VL/Qwen3-VL).
-  Describes an image, answers a question about it, or **reads text from it (OCR)** —
-  e.g. `{"path": "...", "question": "Transcribe all text in this image."}`. The vision
-  model is loaded on demand and unloaded right after (`keep_alive=0`) so it never sits
-  in RAM beside the 4B; also set `OLLAMA_MAX_LOADED_MODELS=1` on the server to be sure.
-  Large photos are auto-downscaled to `AGENT_MAX_IMAGE_PX` (1024) if **Pillow** is
-  installed (`pip install Pillow`), which cuts RAM and latency; without Pillow it sends
-  the full image.
+- **`analyze_image`** — two engines, picked automatically:
+  - **Reading text (receipts, labels, documents): Tesseract OCR** — `pkg install tesseract`
+    (+ `pip install Pillow` for grayscale/contrast/upscale preprocessing). This is **much**
+    more accurate than a small vision model, which *invents digits* on receipts. The LLM
+    then answers your question over the real OCR text. Tune with `AGENT_OCR_ENGINE`
+    (`auto`|`tesseract`|`vision`), `AGENT_TESSERACT_LANG` (e.g. `eng`), `AGENT_TESSERACT_PSM`.
+  - **Describing a scene / visual Q&A: the vision model** — `ollama pull moondream` (or a
+    small Qwen2.5-VL/Qwen3-VL). Loaded on demand, unloaded right after (`keep_alive=0`) so
+    it never sits in RAM beside the 4B; set `OLLAMA_MAX_LOADED_MODELS=1` to be sure.
 - **`analyze_pdf`** — text extraction tries **PyMuPDF** (most robust, handles
   encrypted/awkward PDFs) then **pypdf**. If extraction yields nothing *or fails* (e.g.
   a "codec error" on an encrypted/oddly-encoded PDF that still opens in a viewer), it

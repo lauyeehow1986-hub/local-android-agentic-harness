@@ -24,7 +24,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - web_scrape [S] {"url": str, "render": bool}  (render=true → JS pages via remote headless Chrome, optional)
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str}
-- analyze_image [S] {"path": str, "question": str}  (describe / answer about / OCR-read text from an image)
+- analyze_image [S] {"path": str, "question": str, "ocr": bool}  (printed text→Tesseract OCR then answer; or describe via vision model)
 - analyze_pdf [S] {"path": str, "task": str}
 - transcribe [S] {"path": str, "task": str, "language": str, "diarize": bool}  (meeting audio→text; task=summarize/action items, optional)
 - meeting_notes [S] {"path": str, "title": str, "context": str}  (audio/transcript→structured note; save result with vault_write)

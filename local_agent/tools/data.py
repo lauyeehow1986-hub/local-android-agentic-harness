@@ -164,16 +164,111 @@ def _render_pdf_pages(path: Path, max_pages: int) -> list[bytes]:
         raise RuntimeError("no-backend")
 
 
-def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
-    """Run a vision model on an image to describe it, answer a question about it,
-    or read/transcribe text from it (OCR).
+# Words in a question that mean "read the text" (use real OCR, not a VLM that
+# will plausibly invent digits — the receipt-hallucination failure mode).
+_OCR_INTENT = (
+    "text", "transcribe", "read", "ocr", "receipt", "invoice", "total", "subtotal",
+    "price", "amount", "cost", "number", "digits", "says", "written", "writing",
+    "label", "serial", "code", "date", "menu",
+)
 
-    The vision model is loaded ON DEMAND and unloaded right after (keep_alive=0)
-    so it never sits in RAM next to the 4B. Ask for OCR with a question like
-    "Transcribe all text in this image."
+
+def _looks_like_ocr(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in _OCR_INTENT)
+
+
+def _is_transcribe_only(question: str) -> bool:
+    q = question.lower()
+    return any(w in q for w in ("transcribe", "ocr", "all text", "read all", "extract text"))
+
+
+def _preprocess_for_ocr(raw: bytes) -> bytes:
+    """Grayscale + autocontrast + upscale small images — big accuracy win for
+    Tesseract on phone photos/receipts. No-op (returns raw) without Pillow."""
+    try:
+        import io
+
+        from PIL import Image, ImageOps
+    except ImportError:
+        return raw
+    try:
+        im = Image.open(io.BytesIO(raw))
+        im = ImageOps.exif_transpose(im)        # honor camera orientation
+        im = ImageOps.grayscale(im)
+        im = ImageOps.autocontrast(im)
+        longest = max(im.size)
+        if longest < 1600:                       # upscale small text for OCR
+            scale = 1600 / longest
+            im = im.resize((int(im.width * scale), int(im.height * scale)))
+        out = io.BytesIO()
+        im.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:  # noqa: BLE001
+        return raw
+
+
+def _tesseract_ocr(raw: bytes, ctx: ToolContext) -> Optional[str]:
+    """OCR image bytes with the Tesseract engine (accurate for printed text).
+    Returns None if tesseract isn't installed or produced nothing."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    exe = shutil.which("tesseract")
+    if not exe:
+        return None
+    lang = getattr(ctx.config, "tesseract_lang", "eng")
+    psm = str(getattr(ctx.config, "tesseract_psm", "6"))
+    data = _preprocess_for_ocr(raw)
+    with tempfile.TemporaryDirectory() as td:
+        img_path = Path(td) / "in.png"
+        img_path.write_bytes(data)
+        out_base = Path(td) / "out"
+        try:
+            subprocess.run(
+                [exe, str(img_path), str(out_base), "-l", lang, "--psm", psm],
+                capture_output=True, text=True, timeout=120, check=True,
+            )
+        except Exception:  # noqa: BLE001 - treat any failure as "no tesseract result"
+            return None
+        txt = Path(str(out_base) + ".txt")
+        if not txt.exists():
+            return None
+        text = txt.read_text(encoding="utf-8", errors="ignore").strip()
+        return text or None
+
+
+def _answer_over_text(ctx: ToolContext, text: str, question: str) -> str:
+    """Have the LLM answer a question grounded ONLY in OCR'd text (no inventing)."""
+    if ctx.client is None:
+        return text
+    prompt = (
+        f"Text extracted from an image via OCR (may contain minor errors):\n{text}\n\n"
+        f"Question: {question}\n"
+        "Answer concisely using ONLY the text above. Do not invent numbers or items."
+    )
+    try:
+        return ctx.client.generate(
+            prompt,
+            system="You answer strictly from the provided OCR text; never guess numbers.",
+        ).strip()
+    except Exception:  # noqa: BLE001
+        return text
+
+
+def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Read or analyze an image: describe it, answer a question, or OCR text.
+
+    For reading printed text (receipts, labels, documents) it prefers the
+    **Tesseract** OCR engine — a small vision model invents digits. The LLM then
+    answers your question over the accurate OCR text. Pure description/VQA still
+    uses the on-demand vision model. Force a path with `ocr` (true/false) or the
+    AGENT_OCR_ENGINE config (auto|tesseract|vision).
     """
     path = str(args.get("path", "")).strip()
     question = str(args.get("question", "Describe this image in detail.")).strip()
+    ocr_arg = args.get("ocr", None)
     if not path:
         return "error: 'path' is required"
     p = Path(path)
@@ -181,13 +276,31 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"image not found: {path}"
     if p.suffix.lower() not in _IMAGE_EXTS:
         return f"not a recognized image type: {p.suffix} (expected {', '.join(sorted(_IMAGE_EXTS))})"
-    if ctx.client is None:
-        return "vision unavailable: no model client in context"
 
     try:
         raw = p.read_bytes()
     except OSError as e:
         return f"read error: {e}"
+
+    engine = getattr(ctx.config, "ocr_engine", "auto")
+    want_ocr = bool(ocr_arg) if ocr_arg is not None else _looks_like_ocr(question)
+
+    # OCR path: Tesseract first (accurate), then answer the question over it.
+    if engine != "vision" and (want_ocr or engine == "tesseract"):
+        text = _tesseract_ocr(raw, ctx)
+        if text:
+            if _is_transcribe_only(question):
+                return text
+            return _answer_over_text(ctx, text, question)
+        if engine == "tesseract":
+            return (
+                "tesseract OCR found no text (install it: `pkg install tesseract`, "
+                "or the image has no readable text)."
+            )
+        # auto: fall through to the vision model.
+
+    if ctx.client is None:
+        return "vision unavailable: no model client in context (and no tesseract text)"
     vision_model = getattr(ctx.config, "vision_model", "moondream")
     try:
         result = _vision_ocr(ctx, raw, question)
@@ -311,11 +424,19 @@ def analyze_pdf(args: dict[str, Any], ctx: ToolContext) -> str:
 
 
 def _analyze_pdf_ocr(p: Path, n_pages: int, task: str, ctx: ToolContext) -> str:
-    """OCR fallback for image-only PDFs: render pages → vision model → text."""
-    if ctx.client is None:
+    """OCR fallback for image-only PDFs: render pages → OCR → text.
+
+    Prefers the Tesseract engine per page (accurate for documents); falls back to
+    the vision model only if Tesseract isn't installed.
+    """
+    engine = getattr(ctx.config, "ocr_engine", "auto")
+    use_vision_fallback = ctx.client is not None and engine != "tesseract"
+    has_tesseract = bool(__import__("shutil").which("tesseract")) and engine != "vision"
+    if not has_tesseract and not use_vision_fallback:
         return (
-            f"no extractable text in {p.name} ({n_pages} pages) — looks scanned, and "
-            "no vision client is available to OCR it."
+            f"no extractable text in {p.name} ({n_pages} pages) — looks scanned, and no "
+            "OCR engine available. Install Tesseract (`pkg install tesseract`) or a "
+            "vision model."
         )
     max_pages = getattr(ctx.config, "pdf_ocr_max_pages", 5)
     try:
@@ -333,20 +454,26 @@ def _analyze_pdf_ocr(p: Path, n_pages: int, task: str, ctx: ToolContext) -> str:
         return f"could not render any pages from {p.name}"
 
     vision_model = getattr(ctx.config, "vision_model", "moondream")
+    engine_used = "tesseract" if has_tesseract else vision_model
     ocr_parts: list[str] = []
     for i, img in enumerate(pages, 1):
-        try:
-            txt = _vision_ocr(ctx, img, "Transcribe all text in this image verbatim.")
-        except Exception as e:  # noqa: BLE001
-            return f"vision OCR error on page {i}: {e} (is '{vision_model}' pulled?)"
+        txt = _tesseract_ocr(img, ctx) if has_tesseract else None
+        if not txt and use_vision_fallback:
+            try:
+                txt = _vision_ocr(ctx, img, "Transcribe all text in this image verbatim.")
+            except Exception as e:  # noqa: BLE001
+                return f"OCR error on page {i}: {e} (is '{vision_model}' pulled?)"
         if txt:
             ocr_parts.append(f"[page {i}]\n{txt}")
     ocr_text = "\n\n".join(ocr_parts).strip()
     if not ocr_text:
         return f"OCR produced no text for {p.name} ({n_pages} pages)."
 
+    if ctx.client is None:
+        return f"{p.name} ({n_pages} pages, OCR'd via {engine_used}):\n{ocr_text[:1500]}"
+
     note = (
-        f"{p.name} ({n_pages} pages, OCR'd first {len(pages)} via {vision_model})"
+        f"{p.name} ({n_pages} pages, OCR'd first {len(pages)} via {engine_used})"
     )
     # Optionally run the task (e.g. summarize) over the OCR'd text with the text
     # model. This swaps the vision model out for the 4B again.
@@ -705,8 +832,8 @@ TOOLS = [
         tag="SAFE",
         fn=analyze_image,
         required=("path",),
-        optional=("question",),
-        description="Vision model on an image (loaded on demand).",
+        optional=("question", "ocr"),
+        description="Read/analyze an image: OCR text (Tesseract) for receipts/labels, or describe via vision model.",
     ),
     Tool(
         name="analyze_pdf",

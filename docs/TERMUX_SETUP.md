@@ -76,11 +76,16 @@ yh> summarize the PDF at /storage/emulated/0/Download/<exact-name>.pdf
 ## 3. Optional: image analysis / OCR
 
 ```bash
-ollama pull moondream                # (same model as above)
-pip install Pillow                   # optional: auto-downscale big photos
+pkg install -y tesseract             # accurate OCR for receipts/labels/documents
+pip install Pillow                   # preprocessing (grayscale/contrast/upscale)
+ollama pull moondream                # vision model, for describing scenes / VQA
 ```
+`analyze_image` auto-picks **Tesseract** for reading text (a small vision model
+*invents digits* on receipts) and the **vision model** for describing a scene. For
+other languages: `AGENT_TESSERACT_LANG=eng+chi_sim` (install the lang data first).
 ```
 yh> read all the text in /sdcard/Download/receipt.png
+yh> what's the total on the receipt at /sdcard/Download/receipt.jpg
 ```
 
 ## 4. Optional: meeting transcription (whisper.cpp)

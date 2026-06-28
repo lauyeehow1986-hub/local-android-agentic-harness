@@ -1,0 +1,9 @@
+# Example batch job: a daily digest.
+# Run:   python -m local_agent.batch --approve jobs/daily-digest.txt
+# Cron:  0 7 * * *  cd ~/local-android-agentic-harness && AUTONOMY=full \
+#          python -m local_agent.batch --approve jobs/daily-digest.txt >> ~/jobs/digest.log 2>&1
+#
+# One task per line. Lines starting with # are ignored.
+
+Read today's note in Daily/ and summarize what I did in 3 bullet points.
+List any TODO or unchecked checkbox items across my recent Daily/ notes.

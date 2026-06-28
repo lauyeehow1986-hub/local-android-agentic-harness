@@ -82,11 +82,18 @@ class Config:
     max_image_px: int = field(
         default_factory=lambda: _env_int("AGENT_MAX_IMAGE_PX", 1024)
     )
-    # For scanned (image-only) PDFs, how many pages to render + OCR with the
-    # vision model. Vision is slow on-device, so keep this modest.
+    # For scanned (image-only) PDFs, how many pages to render + OCR.
     pdf_ocr_max_pages: int = field(
         default_factory=lambda: _env_int("AGENT_PDF_OCR_MAX_PAGES", 5)
     )
+    # OCR engine for reading printed text: auto (Tesseract if installed, else the
+    # vision model) | tesseract | vision. Tesseract is far more accurate for
+    # receipts/documents — a small VLM invents digits.
+    ocr_engine: str = field(default_factory=lambda: _env_str("AGENT_OCR_ENGINE", "auto"))
+    tesseract_lang: str = field(
+        default_factory=lambda: _env_str("AGENT_TESSERACT_LANG", "eng")
+    )
+    tesseract_psm: str = field(default_factory=lambda: _env_str("AGENT_TESSERACT_PSM", "6"))
 
     # --- Speech-to-text (transcribe) ---
     # Backend: auto | whisper (openai-whisper CLI) | whispercpp | faster.

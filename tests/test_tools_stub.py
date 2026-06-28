@@ -448,6 +448,79 @@ def test_analyze_image_sends_image_and_unloads(reg, tmp_path):
     assert client.last["keep_alive"] == cfg.vision_keep_alive
 
 
+def test_analyze_image_ocr_uses_tesseract_not_vision(reg, tmp_path, monkeypatch):
+    """A receipt question must read REAL text via Tesseract, not hallucinate via
+    the vision model (the $6.99/$26.94 failure)."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="Egg Fried Rice is $7.30; SubTotal $16.14")
+    ctx2 = ToolContext(config=cfg, client=client)
+    img = tmp_path / "receipt.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake-jpeg")
+
+    # Tesseract returns the REAL receipt text; vision must NOT be called.
+    monkeypatch.setattr(
+        data, "_tesseract_ocr",
+        lambda raw, ctx: "Egg Fried Rice with Grilled Chicken 7.30\nSubTotal $16.14",
+    )
+
+    def no_vision(*a, **k):
+        raise AssertionError("vision model must not be used when Tesseract has text")
+
+    monkeypatch.setattr(data, "_vision_ocr", no_vision)
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "What is the total amount on this receipt?"}, ctx2
+    )
+    assert "16.14" in out
+    # The LLM was asked to answer strictly over the OCR text.
+    assert "7.30" in client.last["prompt"] or "16.14" in client.last["prompt"]
+
+
+def test_analyze_image_transcribe_returns_raw_ocr(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)  # no model needed for raw transcribe
+    img = tmp_path / "label.png"
+    img.write_bytes(b"\x89PNG fake")
+    monkeypatch.setattr(data, "_tesseract_ocr", lambda raw, ctx: "SERIAL ABC-123")
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "transcribe all text"}, ctx2
+    )
+    assert out == "SERIAL ABC-123"
+
+
+def test_analyze_image_describe_uses_vision(reg, tmp_path, monkeypatch):
+    """A non-text question should use the vision model, not OCR."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="a cat on a sofa")
+    ctx2 = ToolContext(config=cfg, client=client)
+    img = tmp_path / "photo.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake")
+
+    def no_tess(raw, ctx):
+        raise AssertionError("describe must not call tesseract")
+
+    monkeypatch.setattr(data, "_tesseract_ocr", no_tess)
+    monkeypatch.setattr(data, "_vision_ocr", lambda ctx, raw, q: "a cat on a sofa")
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "Describe what is in this photo"}, ctx2
+    )
+    assert "cat" in out
+
+
 def test_analyze_image_missing_file(reg, ctx):
     out = reg["analyze_image"].fn({"path": "/nope/x.png"}, ctx)
     assert "not found" in out

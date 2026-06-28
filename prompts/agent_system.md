@@ -99,7 +99,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 
 ### Data & files
 - `analyze_data` [SAFE] — run analysis on a CSV/dataset. `{"path": str, "task": str}`
-- `analyze_image` [SAFE] — vision model on an image: describe it, answer a question about it, or read/transcribe text from it (OCR). Loads a small VL model (e.g. Qwen3-VL / moondream) on demand. `{"path": str, "question": str}`
+- `analyze_image` [SAFE] — read/analyze an image. For printed text (receipts, labels, documents) it uses the **Tesseract OCR engine** (accurate — a small VLM invents digits), then answers your question over the OCR text. Pure description/VQA uses an on-demand vision model. `{"path": str, "question": str, "ocr": bool}` (question & ocr optional)
 - `analyze_pdf` [SAFE] — extract text from a PDF and summarize/answer a task over it. `{"path": str, "task": str}`
 - `transcribe` [SAFE] — speech-to-text for meeting audio; optionally summarize / extract action items. `{"path": str, "task": str, "language": str, "diarize": bool}` (all but path optional)
 - `meeting_notes` [SAFE] — turn meeting audio OR a transcript into a structured Markdown note (Summary / Decisions / Action Items table / Follow-ups). Returns note text to save with `vault_write`. `{"path": str, "title": str, "context": str, "language": str, "diarize": bool}` (all but path optional)
