@@ -50,42 +50,115 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434 python -m local_agent.main
 
 ### On the phone (Termux — the deployment target)
 
-> **Full step-by-step (core + every optional capability + troubleshooting):**
-> **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)**. Short version below.
->
-> **Install everything at once** (after `termux-setup-storage` + cloning the repo):
-> ```bash
-> bash scripts/setup-termux.sh
-> ```
-> Idempotent; pulls ~4 GB (models + Chromium) — use Wi-Fi. Skip heavy parts with
-> `SKIP_WHISPER=1 SKIP_BROWSER=1 SKIP_MODELS=1`.
+Full step-by-step below. (Also in **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)** with a
+troubleshooting table.) Do **Step 0 + 1** for a working agent; add any optional step you want.
 
+> **Shortcut — install everything at once:** after Step 0 + cloning the repo (Step 1b),
+> run `bash scripts/setup-termux.sh` to do every step automatically (idempotent; ~4 GB
+> download — use Wi-Fi). Skip heavy parts with `SKIP_WHISPER=1 SKIP_BROWSER=1 SKIP_MODELS=1`.
+> Then jump to "Daily startup".
+
+#### Step 0 — Termux base (once)
+Install Termux **from F-Droid** (not the Play Store build), then:
 ```bash
-# one-time base
-termux-setup-storage                      # grants access to /storage/emulated/0
-pkg upgrade -y                            # keep packages in sync (prevents cmake drift)
+termux-setup-storage          # tap Allow — grants access to /storage/emulated/0
+pkg upgrade -y                # keep packages in sync (prevents the cmake/jsoncpp error)
 pkg install -y python git
+```
 
-# Ollama — start from $HOME or llama-server dies with "getcwd failed"
+#### Step 1 — Core: Ollama + model + harness (required)
+```bash
+# 1a. Ollama — ALWAYS start from $HOME, or llama-server later dies with "getcwd failed"
 cd ~
 OLLAMA_KEEP_ALIVE=30m OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve &
 ollama pull qwen3:4b-instruct-2507-q4_K_M
 
-# the harness
+# 1b. The harness
 cd ~
 git clone https://github.com/lauyeehow1986-hub/local-android-agentic-harness.git
 cd local-android-agentic-harness && git checkout claude/build-from-markdown-tbl713 && git pull
 pip install -r requirements.txt
 
-# run (terminal frontend, AUTONOMY=hitl by default)
-python -m local_agent.main
-AUTONOMY=full python -m local_agent.main  # autonomous mode (still confirms destructive ops)
+# 1c. Run it
+python -m local_agent.main                 # AUTONOMY=hitl by default
+```
+```
+yh> what did I note about recurrent events?
+```
+That's a working agent (vault + web). One-shot mode: `python -m local_agent.main "your task"`.
+
+#### Step 2 — PDF reading (optional)
+```bash
+pip install pypdf                          # text PDFs
+pkg install -y poppler && pip install pdf2image   # scanned/encrypted PDFs (OCR)
+```
+*(Don't `pip install pymupdf` — it won't build on Termux.)*
+
+#### Step 3 — Image / receipt OCR (optional, recommended)
+```bash
+pkg install -y tesseract                   # accurate OCR — no hallucinated digits
+pip install Pillow                         # image preprocessing
+ollama pull moondream                      # vision model, for describing scenes
 ```
 
-One-shot: `python -m local_agent.main "what did I note about OMOP date mapping?"`
+#### Step 4 — Meeting transcription (optional)
+```bash
+pkg install -y cmake clang make ffmpeg
+cd ~ && git clone https://github.com/ggml-org/whisper.cpp && cd whisper.cpp
+cmake -B build && cmake --build build -j --config Release
+sh ./models/download-ggml-model.sh base.en
+ln -sf "$PWD/build/bin/whisper-cli" "$PREFIX/bin/whisper-cli"
+echo "export AGENT_WHISPER_CPP_MODEL=\"$PWD/models/ggml-base.en.bin\"" >> ~/.bashrc
+export AGENT_WHISPER_CPP_MODEL="$PWD/models/ggml-base.en.bin"
+whisper-cli -m "$AGENT_WHISPER_CPP_MODEL" -f samples/jfk.wav -otxt   # verify
+```
 
-Optional capabilities (PDF, vision, speech, browser, maps) each have a short install
-block in **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)**.
+#### Step 5 — Maps & opening apps / Grab (optional)
+```bash
+pkg install -y termux-api                  # for open_app (launching Maps/Grab)
+```
+
+#### Step 6 — On-device browser / JS pages (optional)
+```bash
+pkg install -y nodejs x11-repo && pkg install -y chromium
+cd ~/local-android-agentic-harness/scripts/browser-bridge && npm install
+echo 'export AGENT_BROWSER_REMOTE_URL=http://127.0.0.1:3000' >> ~/.bashrc
+export AGENT_BROWSER_REMOTE_URL=http://127.0.0.1:3000
+# run the bridge in its own tab (see Daily startup)
+```
+
+#### Step 7 — Scheduled jobs (optional)
+```bash
+pkg install -y cronie
+crond
+crontab -e
+# 0 7 * * *  cd ~/local-android-agentic-harness && AUTONOMY=full \
+#   python -m local_agent.batch --approve jobs/daily-digest.txt >> ~/jobs/digest.log 2>&1
+```
+
+#### Daily startup (three Termux tabs)
+```bash
+# Tab 1 — Ollama (from $HOME)
+cd ~ && OLLAMA_KEEP_ALIVE=30m OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
+
+# Tab 2 — browser bridge (only if you did Step 6)
+cd ~/local-android-agentic-harness/scripts/browser-bridge && \
+  CHROMIUM_PATH="$(command -v chromium-browser || command -v chromium)" node server.js
+
+# Tab 3 — the agent
+cd ~/local-android-agentic-harness && python -m local_agent.main
+```
+
+#### Quick troubleshooting
+| Symptom | Fix |
+|---|---|
+| `HTTP 404 ... model not found` | `ollama pull qwen3:4b-instruct-2507-q4_K_M` |
+| `getcwd failed: No such file or directory` | restart `ollama serve` from `cd ~` |
+| `cmake ... cannot locate symbol _ZN4Json` | `pkg upgrade -y`, then rebuild |
+| `pip install pymupdf` fails | expected — use poppler + pdf2image (Step 2) |
+| `playwright ... No matching distribution` | expected — use the browser bridge (Step 6) |
+| PDF "not found" but opens in a viewer | give the **exact absolute path** |
+| very slow (~0.3 tok/s) | let it cool; `AGENT_NUM_CTX=2048`; compact prompt; or LAN route |
 
 ### REPL commands
 `/autonomy hitl|full` · `/route local|remote|auto` · `/trace on|off` · `/health` · `/quit`
