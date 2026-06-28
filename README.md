@@ -52,6 +52,13 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434 python -m local_agent.main
 
 > **Full step-by-step (core + every optional capability + troubleshooting):**
 > **[docs/TERMUX_SETUP.md](docs/TERMUX_SETUP.md)**. Short version below.
+>
+> **Install everything at once** (after `termux-setup-storage` + cloning the repo):
+> ```bash
+> bash scripts/setup-termux.sh
+> ```
+> Idempotent; pulls ~4 GB (models + Chromium) — use Wi-Fi. Skip heavy parts with
+> `SKIP_WHISPER=1 SKIP_BROWSER=1 SKIP_MODELS=1`.
 
 ```bash
 # one-time base

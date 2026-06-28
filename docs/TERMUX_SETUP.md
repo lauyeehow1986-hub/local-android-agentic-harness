@@ -8,6 +8,11 @@ found the hard way. Do the **Core** section to get a working agent; add the
 > agent REPL, and (optionally) the browser bridge. Open new tabs by swiping from
 > the left edge → "New session".
 
+> **Shortcut — install everything at once:** after Part 0 + cloning the repo (1b),
+> run `bash scripts/setup-termux.sh` to do every step below automatically
+> (idempotent; ~4 GB download). Then jump to "Daily startup". The manual steps
+> below are for understanding or doing it piecemeal.
+
 ---
 
 ## 0. Termux base (one time)
