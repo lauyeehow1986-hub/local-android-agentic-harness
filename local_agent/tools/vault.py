@@ -165,6 +165,28 @@ def vault_write(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"{verb} {rel} ({len(str(content))} chars)"
 
 
+def vault_semantic_search(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Meaning-based vault search using the prebuilt embedding index."""
+    query = str(args.get("query", "")).strip()
+    limit = int(args.get("limit", 5) or 5)
+    if not query:
+        return "error: 'query' is required"
+    if ctx.client is None:
+        return "semantic search unavailable: no model client"
+    from .. import vault_index
+
+    try:
+        hits = vault_index.search(ctx.config, ctx.client, query, limit)
+    except FileNotFoundError as e:
+        return str(e)
+    except Exception as e:  # noqa: BLE001
+        return f"semantic search error: {e}"
+    if not hits:
+        return f"no semantic matches for '{query}'"
+    lines = [f"{path} (sim {score:.2f}): {text[:140].strip()}…" for score, path, text in hits]
+    return "\n".join(lines)
+
+
 TOOLS = [
     Tool(
         name="vault_search",
@@ -172,7 +194,15 @@ TOOLS = [
         fn=vault_search,
         required=("query",),
         optional=("limit",),
-        description="Full-text search the vault.",
+        description="Keyword/full-text search the vault.",
+    ),
+    Tool(
+        name="vault_semantic_search",
+        tag="SAFE",
+        fn=vault_semantic_search,
+        required=("query",),
+        optional=("limit",),
+        description="Meaning-based vault search via embeddings (finds notes by concept, not exact words).",
     ),
     Tool(
         name="vault_read",

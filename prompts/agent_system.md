@@ -87,7 +87,8 @@ When in doubt, treat it as GUARDED and ask. A wasted approval is cheap; a wrong 
 Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / [GUARDED].
 
 ### Knowledge / vault
-- `vault_search` [SAFE] — full-text search the vault. `{"query": str, "limit": int}`
+- `vault_search` [SAFE] — keyword/full-text search the vault. `{"query": str, "limit": int}`
+- `vault_semantic_search` [SAFE] — meaning-based search via embeddings (finds notes by concept, not exact words; needs a prebuilt index). `{"query": str, "limit": int}`
 - `vault_read` [SAFE] — read a note. `{"path": str}` (relative to vault root)
 - `vault_list` [SAFE] — list notes under a folder. `{"folder": str}`
 - `vault_write` [GUARDED] — create/overwrite a note. `{"path": str, "content": str, "mode": "create"|"overwrite"|"append"}`
@@ -96,6 +97,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 - `web_search` [SAFE] — search engine query. `{"query": str}`
 - `web_scrape` [SAFE] — fetch+extract a URL as text/markdown. `{"url": str, "render": bool}` (render=true renders JS pages via a remote headless Chrome; optional)
 - `browser` [GUARDED] — Playwright action (click/fill/navigate/screenshot). `{"steps": [ ... ]}`
+- `research` [SAFE] — search academic papers (arXiv/PubMed); returns titles, abstracts, links. `{"query": str, "source": "arxiv"|"pubmed", "limit": int}`
 
 ### Data & files
 - `analyze_data` [SAFE] — run analysis on a CSV/dataset. `{"path": str, "task": str}`
@@ -112,6 +114,10 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Maps & device
 - `maps` [SAFE] — search a place or get driving directions (OpenStreetMap; returns a Google Maps link). `{"query": str}` OR `{"origin": str, "destination": str}`
 - `open_app` [GUARDED] — open a URL or app deeplink on the phone (e.g. Google Maps navigation, the Grab app to a search). It only OPENS the app; it cannot place orders or pay — the user completes that. `{"target": str}`
+- `clipboard` [SAFE] — read or write the Android clipboard. `{"mode": "read"|"write", "text": str}`
+- `notify` [SAFE] — push an Android notification. `{"title": str, "content": str}`
+- `location` [SAFE] — get the phone's location as JSON. `{"provider": "network"|"gps"}`
+- `speak` [SAFE] — speak text aloud via Android TTS. `{"text": str}`
 
 ### System / control
 - `shell` [GUARDED] — run a Termux shell command. `{"cmd": str}`

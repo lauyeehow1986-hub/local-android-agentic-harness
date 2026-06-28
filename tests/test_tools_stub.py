@@ -16,12 +16,14 @@ from local_agent.tools import ToolContext, build_registry
 # Names that MUST exist (kept in sync with prompts/agent_system.md).
 CONTRACT_TOOLS = {
     "vault_search",
+    "vault_semantic_search",
     "vault_read",
     "vault_list",
     "vault_write",
     "web_search",
     "web_scrape",
     "browser",
+    "research",
     "analyze_data",
     "analyze_image",
     "analyze_pdf",
@@ -34,6 +36,10 @@ CONTRACT_TOOLS = {
     "git_sync",
     "open_app",
     "maps",
+    "clipboard",
+    "notify",
+    "location",
+    "speak",
     "request_approval",
 }
 

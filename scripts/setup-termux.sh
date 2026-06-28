@@ -34,6 +34,10 @@ pip install -r requirements.txt || warn "requirements failed"
 pip install pypdf Pillow pdf2image || warn "optional pip libs failed"
 ok "python deps (pypdf, Pillow, pdf2image)"
 
+note "2b/7  Device tools (termux-api) + optional plotting"
+pkg install -y termux-api || warn "termux-api failed (clipboard/notify/location/voice need it)"
+pip install matplotlib >/dev/null 2>&1 && ok "matplotlib (analyze_data plots)" || warn "matplotlib skipped"
+
 note "3/7  Ollama models"
 if [ "${SKIP_MODELS:-0}" = "1" ]; then
   warn "SKIP_MODELS=1 — skipping model pulls"
@@ -45,9 +49,11 @@ elif command -v ollama >/dev/null 2>&1; then
   }
   ollama pull qwen3:4b-instruct-2507-q4_K_M || warn "qwen pull failed"
   ollama pull moondream || warn "moondream pull failed"
+  ollama pull nomic-embed-text || warn "embed model pull failed (semantic search)"
   ok "models pulled"
+  echo "  tip: build the semantic index with: python -m local_agent.vault_index"
 else
-  warn "ollama not found — install it, then: ollama pull qwen3:4b-instruct-2507-q4_K_M moondream"
+  warn "ollama not found — install it, then pull qwen3:4b-instruct-2507-q4_K_M moondream nomic-embed-text"
 fi
 
 note "4/7  Speech-to-text (whisper.cpp)"

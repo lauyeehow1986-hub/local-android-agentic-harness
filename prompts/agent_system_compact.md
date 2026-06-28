@@ -16,12 +16,14 @@ APPROVAL: flag AUTONOMY is hitl (default) or full, given at session top.
 VAULT: root /storage/emulated/0/Download/Obsidian/Yh android. Markdown, preserve YAML frontmatter. Daily captures append to Daily/YYYY-MM-DD.md. One note per write. Use [[wikilinks]] when natural.
 
 TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
-- vault_search [S] {"query": str, "limit": int}
+- vault_search [S] {"query": str, "limit": int}  (keyword)
+- vault_semantic_search [S] {"query": str, "limit": int}  (meaning-based, via embeddings index)
 - vault_read [S] {"path": str}
 - vault_list [S] {"folder": str}
 - vault_write [G] {"path": str, "content": str, "mode": "create"|"overwrite"|"append"}
 - web_search [S] {"query": str}
 - web_scrape [S] {"url": str, "render": bool}  (render=true → JS pages via remote headless Chrome, optional)
+- research [S] {"query": str, "source": "arxiv"|"pubmed", "limit": int}  (academic papers)
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str}
 - analyze_image [S] {"path": str, "question": str, "ocr": bool}  (printed text→Tesseract OCR then answer; or describe via vision model)
@@ -33,6 +35,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - rephrase [S] {"text": str, "style": str}
 - maps [S] {"query": str} OR {"origin": str, "destination": str}  (place search / driving directions, returns Maps link)
 - open_app [G] {"target": str}  (open a URL/deeplink on the phone, e.g. Grab app or Maps nav; cannot order/pay)
+- clipboard [S] {"mode": "read"|"write", "text": str} · notify [S] {"title": str, "content": str} · location [S] {"provider": str} · speak [S] {"text": str}
 - shell [G] {"cmd": str}
 - git_sync [G] {"repo_path": str, "message": str}
 - request_approval [S] {"action": str, "details": str}

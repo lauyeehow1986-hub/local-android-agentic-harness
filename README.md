@@ -221,6 +221,8 @@ your hands by design.
 | `AGENT_REMOTE_MODEL` | `qwen3:30b-a3b-instruct-2507` | model on the remote box |
 | `AGENT_ROUTE` | `local` | `local` / `remote` / `auto` |
 | `AGENT_VISION_MODEL` | `moondream` | vision model for `analyze_image` |
+| `AGENT_EMBED_MODEL` | `nomic-embed-text` | embedding model for semantic search |
+| `AGENT_VAULT_INDEX` | `~/.local_agent/vault_index.json` | semantic index location |
 | `AGENT_VISION_KEEP_ALIVE` | `0` | unload vision model immediately (RAM-safe) |
 | `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
 | `AGENT_PDF_OCR_MAX_PAGES` | `5` | pages to render + OCR for scanned PDFs |
@@ -236,11 +238,12 @@ your hands by design.
 
 ## Tools
 
-`vault_search` `vault_read` `vault_list` `vault_write`*(G)* ·
-`web_search` `web_scrape` `browser`*(G)* ·
+`vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`*(G)* ·
+`web_search` `web_scrape` `browser`*(G)* `research` ·
 `analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
-`maps` `open_app`*(G)* · `shell`*(G)* `git_sync`*(G)* `request_approval`
+`maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
+`shell`*(G)* `git_sync`*(G)* `request_approval`
 
 **(G) = GUARDED** (writes/deletes/sends/shell). In `hitl` they require approval; in `full`
 they run directly **except** the always-confirm set (shell `rm`/`mv`/`git push`/`curl|sh`/
@@ -304,6 +307,11 @@ Optional backends (the harness degrades gracefully without them):
 | Ask | Tool(s) the agent uses |
 |---|---|
 | "What did I note about recurrent events?" | `vault_search` → `vault_read` |
+| "What did I conclude about competing risks?" (by meaning) | `vault_semantic_search` |
+| "Find recent arXiv papers on recurrent-event survival" | `research` (arxiv) |
+| "Analyze /sdcard/data.csv and plot it to /sdcard/hist.png" | `analyze_data` (stats + plot) |
+| "Rephrase what I just copied" | `clipboard` (read) → `rephrase` |
+| "Remind me at 3pm" (in a cron job) | `notify` |
 | "List the notes in my Daily folder" | `vault_list` |
 | "Save a daily note that I deployed v10.13" | `request_approval` → `vault_write` (append) |
 | "Rephrase this politely: 'send me the file now'" | `rephrase` |
@@ -325,6 +333,36 @@ Optional backends (the harness degrades gracefully without them):
 
 Read-only/analysis tools (SAFE) run immediately. Anything that writes/sends/executes
 (GUARDED) asks first in `hitl` mode.
+
+## Semantic vault search (ask by meaning)
+
+`vault_search` is keyword-based; `vault_semantic_search` finds notes by *concept* using
+local embeddings. Pull a small embed model and build the index once:
+
+```bash
+ollama pull nomic-embed-text
+python -m local_agent.vault_index            # incremental; --rebuild to start fresh
+```
+Then the agent can answer "what did I conclude about competing risks?" and find the
+Fine-Gray note even if those words never appear. Re-run the indexer after big vault
+changes (it only re-embeds changed notes). Index lives at `AGENT_VAULT_INDEX`.
+
+## Voice loop (talk to it)
+
+Hands-free, fully on-device — record → whisper → agent → speak:
+```bash
+pkg install -y termux-api        # mic + TTS
+python -m local_agent.voice      # press Enter to talk, Ctrl-C to quit
+```
+Needs a whisper backend (Step 4). Guarded actions are auto-denied in voice mode.
+
+## Device & research tools
+
+- **`clipboard`** read/write, **`notify`** (great for cron digests), **`location`**,
+  **`speak`** — all via `pkg install termux-api`.
+- **`research`** — search arXiv or PubMed and summarize into the vault (no key).
+- **`analyze_data`** now reports per-column quartiles/sd, pairwise correlations, and an
+  optional histogram (`plot=/path.png`, needs `pip install matplotlib`).
 
 ## Hybrid routing (offload hard tasks to a LAN box)
 

@@ -23,28 +23,9 @@ from typing import Any
 from . import Tool, ToolContext
 
 
-def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
-    path = str(args.get("path", "")).strip()
-    task = str(args.get("task", "")).strip()
-    if not path:
-        return "error: 'path' is required"
-    p = Path(path)
-    if not p.exists():
-        return f"file not found: {path}"
-    try:
-        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-    except OSError as e:
-        return f"read error: {e}"
-    if not rows:
-        return "empty CSV"
-
-    header = rows[0]
-    data_rows = rows[1:]
-    summary = [f"{len(data_rows)} rows x {len(header)} cols", f"columns: {', '.join(header)}"]
-
-    # Numeric column stats where possible.
+def _numeric_columns(header, data_rows):
+    """Return {col_name: [floats]} for columns that are mostly numeric."""
+    cols: dict[str, list[float]] = {}
     for ci, col in enumerate(header):
         nums: list[float] = []
         for r in data_rows:
@@ -54,15 +35,87 @@ def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
                 except ValueError:
                     pass
         if nums and len(nums) >= max(1, len(data_rows) // 2):
-            summary.append(
-                f"  {col}: min={min(nums):.3g} max={max(nums):.3g} "
-                f"mean={statistics.fmean(nums):.3g}"
-            )
+            cols[col] = nums
+    return cols
+
+
+def _describe(nums: list[float]) -> str:
+    n = len(nums)
+    mean = statistics.fmean(nums)
+    sd = statistics.pstdev(nums) if n > 1 else 0.0
+    qs = statistics.quantiles(nums, n=4) if n >= 4 else [min(nums), statistics.median(nums), max(nums)]
+    return (
+        f"n={n} min={min(nums):.3g} q1={qs[0]:.3g} median={statistics.median(nums):.3g} "
+        f"q3={qs[-1]:.3g} max={max(nums):.3g} mean={mean:.3g} sd={sd:.3g}"
+    )
+
+
+def _maybe_plot(numeric: dict, out_path: str) -> str:
+    """Histogram of the first numeric column via matplotlib, if available."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return "(plot skipped: matplotlib not installed — `pip install matplotlib`)"
+    try:
+        col, vals = next(iter(numeric.items()))
+        plt.figure()
+        plt.hist(vals, bins=min(30, max(5, len(vals) // 5)))
+        plt.title(f"{col} (n={len(vals)})")
+        plt.xlabel(col)
+        plt.ylabel("count")
+        p = Path(out_path).expanduser()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(p, dpi=100, bbox_inches="tight")
+        plt.close()
+        return f"plot saved: {p}"
+    except Exception as e:  # noqa: BLE001
+        return f"(plot failed: {e})"
+
+
+def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = str(args.get("path", "")).strip()
+    task = str(args.get("task", "")).strip()
+    plot_path = str(args.get("plot", "")).strip()
+    if not path:
+        return "error: 'path' is required"
+    p = Path(path)
+    if not p.exists():
+        return f"file not found: {path}"
+    try:
+        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
+            rows = list(csv.reader(f))
+    except OSError as e:
+        return f"read error: {e}"
+    if not rows:
+        return "empty CSV"
+
+    header, data_rows = rows[0], rows[1:]
+    numeric = _numeric_columns(header, data_rows)
+    summary = [f"{len(data_rows)} rows x {len(header)} cols", f"columns: {', '.join(header)}"]
+    for col, nums in numeric.items():
+        summary.append(f"  {col}: {_describe(nums)}")
+
+    # Pairwise correlation between the first few numeric columns.
+    cols = list(numeric.items())
+    for i in range(len(cols)):
+        for j in range(i + 1, min(len(cols), 4)):
+            (n1, v1), (n2, v2) = cols[i], cols[j]
+            m = min(len(v1), len(v2))
+            if m >= 3:
+                try:
+                    r = statistics.correlation(v1[:m], v2[:m])
+                    summary.append(f"  corr({n1},{n2}) = {r:.2f}")
+                except (statistics.StatisticsError, ValueError):
+                    pass
 
     base = "\n".join(summary)
 
-    # Optional: let the local model answer the natural-language task over the
-    # summary. Kept short to respect latency.
+    if plot_path and numeric:
+        base += "\n" + _maybe_plot(numeric, plot_path)
+
     if task and ctx.client is not None:
         try:
             prompt = (
@@ -824,8 +877,8 @@ TOOLS = [
         tag="SAFE",
         fn=analyze_data,
         required=("path",),
-        optional=("task",),
-        description="Summarize/analyze a CSV dataset.",
+        optional=("task", "plot"),
+        description="Analyze a CSV: per-column stats, correlations, optional histogram (plot=path).",
     ),
     Tool(
         name="analyze_image",

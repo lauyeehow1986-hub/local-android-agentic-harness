@@ -70,6 +70,11 @@ class Config:
     vision_model: str = field(
         default_factory=lambda: _env_str("AGENT_VISION_MODEL", "moondream")
     )
+    # Embedding model for semantic vault search (small, fast). Pull it once:
+    # `ollama pull nomic-embed-text`.
+    embed_model: str = field(
+        default_factory=lambda: _env_str("AGENT_EMBED_MODEL", "nomic-embed-text")
+    )
     # How long the vision model stays resident after an analyze_image call. "0"
     # unloads it immediately so it never sits in RAM alongside the 4B (the phone
     # can't hold both). Raise (e.g. "5m") if you do many image calls in a row.
@@ -164,6 +169,14 @@ class Config:
     log_path: Path = field(
         default_factory=lambda: Path(
             _env_str("AGENT_LOG", str(Path.home() / ".local_agent" / "agent.log"))
+        )
+    )
+    vault_index_path: Path = field(
+        default_factory=lambda: Path(
+            _env_str(
+                "AGENT_VAULT_INDEX",
+                str(Path.home() / ".local_agent" / "vault_index.json"),
+            )
         )
     )
 

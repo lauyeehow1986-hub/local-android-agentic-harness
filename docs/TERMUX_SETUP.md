@@ -93,6 +93,20 @@ yh> read all the text in /sdcard/Download/receipt.png
 yh> what's the total on the receipt at /sdcard/Download/receipt.jpg
 ```
 
+## 3b. Optional: semantic vault search + voice + device tools
+
+```bash
+ollama pull nomic-embed-text         # embedding model for meaning-based search
+python -m local_agent.vault_index    # build the index (re-run after big edits)
+pkg install -y termux-api            # clipboard / notify / location / TTS + voice loop
+pip install matplotlib               # optional: histograms in analyze_data
+```
+```
+yh> (semantic) what did I conclude about competing risks?
+yh> find recent arXiv papers on recurrent-event survival and save a summary note
+python -m local_agent.voice          # talk to the agent (Enter to speak)
+```
+
 ## 4. Optional: meeting transcription (whisper.cpp)
 
 ```bash

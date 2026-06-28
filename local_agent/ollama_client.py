@@ -184,6 +184,15 @@ class OllamaClient:
         result = self._post("/api/generate", payload)
         return result.get("response", "")
 
+    def embed(self, text: str, model: str) -> list[float]:
+        """Return an embedding vector for `text` using an embedding model
+        (e.g. nomic-embed-text). Used for semantic vault search."""
+        result = self._post("/api/embeddings", {"model": model, "prompt": text})
+        vec = result.get("embedding")
+        if not isinstance(vec, list):
+            raise OllamaError(f"no embedding returned (is '{model}' pulled?)")
+        return vec
+
     def health(self) -> bool:
         """True if the Ollama server answers and has the model available."""
         url = f"{self.base_url}/api/tags"
