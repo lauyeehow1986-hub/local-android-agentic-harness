@@ -282,6 +282,17 @@ Reports **completion rate**, **tool-selection rate**, **valid-JSON rate**,
 **keyword-match rate**, and **mean tok/s**. Add your own tasks as JSON objects:
 `{"id", "task", "expect_tool": <name|null>, "expect_keywords": [..]}`.
 
+**A/B compare models** — pick the best brain for *your* tasks on data, not datasheets:
+
+```bash
+python -m local_agent.eval --models qwen3:4b-instruct-2507-q4_K_M,gemma4:e2b
+```
+
+Runs the task set against each model and prints a side-by-side table. For a ReAct
+agent, **tool-selection** and **valid-JSON** rates usually matter more than raw
+multimodal ability — a model that reads images but emits 70% valid JSON feels worse
+than a text model at 95%. (At ~3 tok/s an A/B over the full set is a long run.)
+
 ## Latency tuning (this chip is slow — ~3 tok/s, prefill-bound)
 
 The first turn of a session spends most of its time *reading* the prompt (prefill).

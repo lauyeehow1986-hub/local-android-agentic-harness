@@ -203,27 +203,87 @@ def load_tasks(path: Path) -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def run_models(tasks, models, agent_factory) -> dict[str, EvalReport]:
+    """Run the same task set against each model. `agent_factory(model)` returns a
+    fresh Agent configured for that model. Returns {model_name: EvalReport}."""
+    reports: dict[str, EvalReport] = {}
+    for model in models:
+        agent = agent_factory(model)
+        reports[model] = run_eval(agent, tasks)
+    return reports
+
+
+def format_comparison(reports: dict[str, EvalReport]) -> str:
+    """Side-by-side table: one column per model, one row per metric."""
+    models = list(reports.keys())
+    rows = [
+        ("completion", lambda r: f"{r.completion_rate:.0%}"),
+        ("tool-select", lambda r: f"{r.tool_selection_rate:.0%}"),
+        ("valid-JSON", lambda r: f"{r.valid_json_rate:.0%}"),
+        ("keyword", lambda r: f"{r.keyword_rate:.0%}"),
+        ("tok/s", lambda r: f"{r.mean_tok_per_s:.2f}" if r.mean_tok_per_s else "-"),
+    ]
+    w = max(12, *(len(m) for m in models))
+    header = "metric".ljust(12) + "".join(m.ljust(w + 2) for m in models)
+    lines = [header, "-" * len(header)]
+    for label, fn in rows:
+        line = label.ljust(12) + "".join(fn(reports[m]).ljust(w + 2) for m in models)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _make_agent_factory(config):
+    """Return agent_factory(model) that builds an Agent on `model`, reusing config."""
+    from .loop import Agent
+    from .ollama_client import OllamaClient
+
+    def factory(model: str):
+        client = OllamaClient(
+            base_url=config.ollama_base_url,
+            model=model,
+            num_ctx=config.num_ctx,
+            temperature=config.temperature,
+            timeout_s=config.request_timeout_s,
+            num_predict=config.max_new_tokens,
+        )
+        return Agent(config=config, client=client)
+
+    return factory
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Run the local-agent eval harness.")
     default_tasks = Path(__file__).resolve().parent / "eval_tasks.json"
     ap.add_argument("--tasks", default=str(default_tasks), help="path to tasks JSON")
+    ap.add_argument(
+        "--models",
+        default="",
+        help="comma-separated models for an A/B run, e.g. qwen3:4b-instruct-2507-q4_K_M,gemma4:e2b",
+    )
     args = ap.parse_args(argv)
 
     from .config import load_config
-    from .loop import Agent
-    from .ollama_client import OllamaClient
 
     config = load_config()
-    client = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.model,
-        num_ctx=config.num_ctx,
-        temperature=config.temperature,
-        timeout_s=config.request_timeout_s,
-        num_predict=config.max_new_tokens,
-    )
-    agent = Agent(config=config, client=client)
+    config.stream = False
     tasks = load_tasks(Path(args.tasks))
+    factory = _make_agent_factory(config)
+
+    # A/B mode: run each model and print a side-by-side comparison.
+    if args.models.strip():
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+        print(f"A/B: {len(tasks)} tasks × {len(models)} models {models} …")
+        print("(at ~3 tok/s this is a long run — let it cook)\n")
+        reports: dict[str, EvalReport] = {}
+        for model in models:
+            print(f"--- {model} ---")
+            reports[model] = run_eval(factory(model), tasks)
+            print(f"  done: {reports[model].completion_rate:.0%} completed\n")
+        print(format_comparison(reports))
+        return 0
+
+    # Single-model run.
+    agent = factory(config.model)
     print(f"running {len(tasks)} tasks against {config.model} …\n")
     report = run_eval(agent, tasks)
     for r in report.results:
