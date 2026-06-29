@@ -29,23 +29,30 @@ def _have(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
+def _rec_path() -> Path:
+    return Path(tempfile.gettempdir()) / "agent_voice_rec.m4a"
+
+
 def _start_record(max_seconds: int) -> Optional[Path]:
     """Begin recording (returns immediately). Stops on _stop_record() or the cap.
 
     Records .m4a — termux-microphone-record's native format; our transcribe path
-    converts it to WAV via ffmpeg for whisper.cpp.
+    converts it to WAV via ffmpeg for whisper.cpp. The output path must NOT exist
+    beforehand (the recorder won't write into an existing file), so we delete it
+    first; we also clear any stuck recording session.
     """
     if not _have("termux-microphone-record"):
         print("termux-microphone-record not found — `pkg install termux-api`.", file=sys.stderr)
         return None
-    rec = Path(tempfile.mkstemp(suffix=".m4a")[1])
+    subprocess.run(["termux-microphone-record", "-q"], capture_output=True)  # clear stuck session
+    rec = _rec_path()
+    rec.unlink(missing_ok=True)                                              # fresh path
     proc = subprocess.run(
         ["termux-microphone-record", "-f", str(rec), "-l", str(max_seconds)],
         capture_output=True, text=True,
     )
-    msg = (proc.stdout or "").strip() + (proc.stderr or "").strip()
-    # Surface recorder errors (no Termux:API app, mic permission denied, busy…).
-    if proc.returncode != 0 or "error" in msg.lower() or "failed" in msg.lower():
+    msg = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if "started" not in msg.lower():
         print(f"recorder: {msg or 'failed to start (check Termux:API app + mic permission)'}",
               file=sys.stderr)
         return None
@@ -56,7 +63,7 @@ def _stop_record() -> None:
     subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
     import time
 
-    time.sleep(0.5)  # let the file flush to disk
+    time.sleep(1.0)  # let the recorder finalize/flush the file to disk
 
 
 def _speak(text: str) -> None:
