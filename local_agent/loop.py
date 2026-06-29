@@ -88,8 +88,13 @@ class Agent:
 
     # -- prompt assembly --------------------------------------------------
     def _initial_transcript(self, user_task: str) -> str:
+        import datetime
+
         autonomy = self.config.normalized_autonomy()
-        return f"AUTONOMY={autonomy}\nUSER: {user_task}\n"
+        # Inject the current date so "today"/"tomorrow" resolve and daily notes
+        # land in Daily/<DATE>.md.
+        today = datetime.date.today().isoformat()
+        return f"AUTONOMY={autonomy}\nDATE={today}\nUSER: {user_task}\n"
 
     def _full_prompt(self, transcript: str) -> str:
         # The system prompt is passed via the system field; the transcript is

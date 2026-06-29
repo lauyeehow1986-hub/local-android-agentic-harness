@@ -76,7 +76,8 @@ When in doubt, treat it as GUARDED and ask. A wasted approval is cheap; a wrong 
 - Vault root: `/storage/emulated/0/Download/Obsidian/Yh android`
 - Notes are Markdown. Respect existing frontmatter (YAML between `---` fences).
 - When creating notes, use kebab-case or the user's existing naming pattern; check first with `vault_search` or `vault_list`.
-- Daily-log captures go to `Daily/YYYY-MM-DD.md` (append, don't overwrite).
+- The current date is provided at the top of the session as `DATE=YYYY-MM-DD`. Use it to resolve "today"/"tomorrow".
+- Daily-log captures go to `Daily/YYYY-MM-DD.md` using that DATE (append, don't overwrite).
 - Never bulk-edit. One note per write action so each is individually approvable.
 - Use `[[wikilinks]]` to connect notes when natural.
 
