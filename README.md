@@ -201,7 +201,12 @@ cd ~/local-android-agentic-harness && python -m local_agent.main
 | very slow (~0.3 tok/s) | let it cool; `AGENT_NUM_CTX=2048`; compact prompt; or LAN route |
 
 ### REPL commands
-`/autonomy hitl|full` · `/route local|remote|auto` · `/trace on|off` · `/health` · `/quit`
+`/autonomy hitl|full` · `/route local|remote|auto` · `/whisper <name|path>` · `/trace on|off` · `/health` · `/quit`
+
+`/whisper` switches the speech model on the fly by short name (`small.en`, `small`,
+`medium`, …) — resolved to `~/whisper.cpp/models/ggml-<name>.bin`. For non-English audio,
+use a multilingual model (drop `.en`) and `transcribe`/`meeting_notes` accept
+`"translate": true` to output English from any language.
 
 ### Batch & cron (unattended runs)
 

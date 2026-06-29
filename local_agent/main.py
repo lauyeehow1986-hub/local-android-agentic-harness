@@ -6,6 +6,7 @@
 Runtime commands in the REPL:
     /autonomy hitl|full       toggle approval mode
     /route local|remote|auto  pick the model backend (remote = LAN box)
+    /whisper <name|path>      switch the speech model (e.g. small.en, small, medium)
     /trace on|off             show/hide the ReAct trace
     /health                   check the Ollama connection(s)
     /quit                     exit
@@ -101,6 +102,19 @@ def main(argv: list[str] | None = None) -> int:
                     frontend.on_info(f"route = {agent.route}")
             else:
                 frontend.on_info("usage: /route local|remote|auto")
+            continue
+        if task.startswith("/whisper"):
+            parts = task.split()
+            if len(parts) == 2:
+                # Short name (e.g. small.en, small) or a full path — used by both
+                # whisper.cpp (resolved to ~/whisper.cpp/models/ggml-<name>.bin)
+                # and openai/faster (used as the model name directly).
+                config.whisper_cpp_model = parts[1]
+                config.whisper_model = parts[1].replace("ggml-", "").replace(".bin", "")
+                frontend.on_info(f"whisper model = {parts[1]}")
+            else:
+                cur = config.whisper_cpp_model or config.whisper_model
+                frontend.on_info(f"whisper model = {cur or '(unset)'} · usage: /whisper <name|path>")
             continue
 
         agent.run_task(task, frontend)

@@ -146,7 +146,7 @@ def test_transcribe_writes_sidecar_and_preview(reg, tmp_path, monkeypatch):
     audio.write_bytes(b"fake-audio")
 
     monkeypatch.setattr(
-        data, "_transcribe_audio", lambda p, c, lang: "We shipped v10 and agreed to fix the bug."
+        data, "_transcribe_audio", lambda p, c, lang, translate=False: "We shipped v10 and agreed to fix the bug."
     )
     out = reg["transcribe"].fn({"path": str(audio)}, ctx2)
     assert "9 words transcribed" in out
@@ -169,11 +169,45 @@ def test_transcribe_with_summary_task(reg, tmp_path, monkeypatch):
     audio = tmp_path / "meeting.wav"
     audio.write_bytes(b"fake")
 
-    monkeypatch.setattr(data, "_transcribe_audio", lambda p, c, lang: "long transcript text")
+    monkeypatch.setattr(data, "_transcribe_audio", lambda p, c, lang, translate=False: "long transcript text")
     out = reg["transcribe"].fn(
         {"path": str(audio), "task": "summarize decisions and action items"}, ctx2
     )
     assert "Action: Bob fixes bug" in out
+
+
+def test_transcribe_translate_flag(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    audio = tmp_path / "zh.m4a"
+    audio.write_bytes(b"x")
+
+    seen = {}
+
+    def fake_audio_to_text(p, c, lang, *, diarize=False, translate=False):
+        seen["translate"] = translate
+        return ("Hello in English", None)
+
+    monkeypatch.setattr(data, "_audio_to_text", fake_audio_to_text)
+    out = reg["transcribe"].fn({"path": str(audio), "translate": True}, ctx2)
+    assert seen["translate"] is True
+    assert "English" in out
+
+
+def test_resolve_whispercpp_short_name():
+    from pathlib import Path
+
+    from local_agent.tools import data
+
+    resolved = data._resolve_whispercpp_model("small.en")
+    assert resolved.endswith("/whisper.cpp/models/ggml-small.en.bin")
+    # already-good name forms collapse to the same path
+    assert data._resolve_whispercpp_model("ggml-small.en.bin").endswith("ggml-small.en.bin")
 
 
 def test_transcribe_no_backend(reg, tmp_path, monkeypatch):
@@ -187,7 +221,7 @@ def test_transcribe_no_backend(reg, tmp_path, monkeypatch):
     audio = tmp_path / "rec.mp3"
     audio.write_bytes(b"x")
 
-    def no_backend(p, c, lang):
+    def no_backend(p, c, lang, translate=False):
         raise RuntimeError("no-backend")
 
     monkeypatch.setattr(data, "_transcribe_audio", no_backend)
@@ -236,7 +270,7 @@ def test_meeting_notes_from_audio(reg, tmp_path, monkeypatch):
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake")
 
-    monkeypatch.setattr(data, "_audio_to_text", lambda p, c, lang, diarize=False: ("transcript words", None))
+    monkeypatch.setattr(data, "_audio_to_text", lambda p, c, lang, diarize=False, translate=False: ("transcript words", None))
     out = reg["meeting_notes"].fn({"path": str(audio)}, ctx2)
     assert "type: meeting" in out
     # raw transcript saved alongside the audio

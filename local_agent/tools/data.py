@@ -582,10 +582,28 @@ def _summarize_long(
     return final
 
 
-def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
+def _resolve_whispercpp_model(name: str) -> str:
+    """Allow AGENT_WHISPER_CPP_MODEL to be a short name (e.g. 'small.en' or
+    'small') instead of a full path. An existing file path is used as-is;
+    otherwise we expand <name> -> ~/whisper.cpp/models/ggml-<name>.bin."""
+    if not name:
+        return name
+    p = Path(name).expanduser()
+    if p.exists():
+        return str(p)
+    short = name
+    if short.startswith("ggml-"):
+        short = short[len("ggml-"):]
+    if short.endswith(".bin"):
+        short = short[:-4]
+    return str(Path.home() / "whisper.cpp" / "models" / f"ggml-{short}.bin")
+
+
+def _transcribe_audio(p: Path, ctx: ToolContext, language: str, *, translate: bool = False) -> str:
     """Detect a Whisper backend and return the transcript text.
 
     Backends tried (auto): openai-whisper CLI → whisper.cpp → faster-whisper.
+    `translate=True` outputs English regardless of the spoken language.
     Raises RuntimeError('no-backend') if none is available, or
     RuntimeError('ffmpeg-needed') if whisper.cpp needs WAV but ffmpeg is absent.
     """
@@ -602,10 +620,11 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
         if exe:
             model = getattr(ctx.config, "whisper_model", "base")
             bs = str(getattr(ctx.config, "whisper_beam_size", 5))
+            task = "translate" if translate else "transcribe"
             with tempfile.TemporaryDirectory() as td:
                 subprocess.run(
                     [exe, str(p), "--model", model, "--output_format", "txt",
-                     "--output_dir", td, "--task", "transcribe", "--beam_size", bs,
+                     "--output_dir", td, "--task", task, "--beam_size", bs,
                      *lang_args_openai],
                     capture_output=True, text=True, timeout=3600, check=True,
                 )
@@ -618,7 +637,7 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
     if pref in ("auto", "whispercpp"):
         exe = next((shutil.which(n) for n in ("whisper-cli", "whisper-cpp", "main") if shutil.which(n)), None)
         if exe:
-            model = getattr(ctx.config, "whisper_cpp_model", "")
+            model = _resolve_whispercpp_model(getattr(ctx.config, "whisper_cpp_model", ""))
             if not model:
                 raise RuntimeError("whispercpp-model-needed")
             wav, tmp_wav = _ensure_wav16k(p)
@@ -629,6 +648,8 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
                     cmd = [exe, "-m", model, "-f", str(wav), "-otxt", "-of", str(of), "-bs", bs]
                     if language:
                         cmd += ["-l", language]
+                    if translate:
+                        cmd += ["-tr"]
                     subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)
                     txt = Path(str(of) + ".txt")
                     return txt.read_text(encoding="utf-8", errors="ignore").strip() if txt.exists() else ""
@@ -645,7 +666,10 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
         if WhisperModel is not None:
             model = getattr(ctx.config, "whisper_model", "base")
             wm = WhisperModel(model, device="cpu", compute_type="int8")
-            segments, _ = wm.transcribe(str(p), language=language or None)
+            segments, _ = wm.transcribe(
+                str(p), language=language or None,
+                task="translate" if translate else "transcribe",
+            )
             return " ".join(seg.text.strip() for seg in segments).strip()
 
     raise RuntimeError("no-backend")
@@ -700,12 +724,12 @@ def _whisper_hint(kind: str) -> str:
     return f"transcribe error: {kind}"
 
 
-def _audio_to_text(p: Path, ctx: ToolContext, language: str, *, diarize: bool = False):
+def _audio_to_text(p: Path, ctx: ToolContext, language: str, *, diarize: bool = False, translate: bool = False):
     """Transcribe audio to text. Returns (text, error_message). Exactly one is set."""
     try:
         if diarize:
             return _transcribe_diarized(p, ctx, language), None
-        return _transcribe_audio(p, ctx, language), None
+        return _transcribe_audio(p, ctx, language, translate=translate), None
     except RuntimeError as e:
         return None, _whisper_hint(str(e))
     except Exception as e:  # noqa: BLE001
@@ -748,16 +772,18 @@ def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
     """Speech-to-text for meetings: transcribe an audio/video file, save the full
     transcript next to it, and (optionally) summarize / extract action items.
 
-    args: {"path": str, "task": str?, "language": str?, "diarize": bool?}
+    args: {"path": str, "task": str?, "language": str?, "diarize": bool?, "translate": bool?}
       - task: if given (e.g. "summarize decisions and action items"), runs a
         map-reduce summary over the transcript with the local model.
       - language: e.g. "en"; omit to auto-detect.
       - diarize: label speakers (needs whisperx; desktop/LAN-grade).
+      - translate: output English even if the speech is another language.
     """
     path = str(args.get("path", "")).strip()
     task = str(args.get("task", "")).strip()
     language = str(args.get("language", "") or getattr(ctx.config, "whisper_language", "")).strip()
     diarize = bool(args.get("diarize", False))
+    translate = bool(args.get("translate", False))
     if not path:
         return "error: 'path' is required"
     p = Path(path)
@@ -766,7 +792,7 @@ def transcribe(args: dict[str, Any], ctx: ToolContext) -> str:
     if p.suffix.lower() not in _AUDIO_EXTS:
         return f"unrecognized audio type: {p.suffix} (expected {', '.join(sorted(_AUDIO_EXTS))})"
 
-    text, err = _audio_to_text(p, ctx, language, diarize=diarize)
+    text, err = _audio_to_text(p, ctx, language, diarize=diarize, translate=translate)
     if err:
         return err
 
@@ -827,6 +853,7 @@ def meeting_notes(args: dict[str, Any], ctx: ToolContext) -> str:
     context = str(args.get("context", "")).strip()
     language = str(args.get("language", "") or getattr(ctx.config, "whisper_language", "")).strip()
     diarize = bool(args.get("diarize", False))
+    translate = bool(args.get("translate", False))
     if not path:
         return "error: 'path' is required"
     if ctx.client is None:
@@ -841,7 +868,7 @@ def meeting_notes(args: dict[str, Any], ctx: ToolContext) -> str:
         text = p.read_text(encoding="utf-8", errors="ignore").strip()
         source = f"transcript {p.name}"
     elif suffix in _AUDIO_EXTS:
-        text, err = _audio_to_text(p, ctx, language, diarize=diarize)
+        text, err = _audio_to_text(p, ctx, language, diarize=diarize, translate=translate)
         if err:
             return err
         if not text:
@@ -904,7 +931,7 @@ TOOLS = [
         tag="SAFE",
         fn=transcribe,
         required=("path",),
-        optional=("task", "language", "diarize"),
+        optional=("task", "language", "diarize", "translate"),
         description="Transcribe meeting audio; optionally summarize / extract action items.",
     ),
     Tool(
@@ -912,7 +939,7 @@ TOOLS = [
         tag="SAFE",
         fn=meeting_notes,
         required=("path",),
-        optional=("title", "context", "language", "diarize"),
+        optional=("title", "context", "language", "diarize", "translate"),
         description="Audio/transcript → structured meeting note (summary, decisions, action items).",
     ),
 ]
