@@ -104,7 +104,7 @@ pip install matplotlib               # optional: histograms in analyze_data
 ```
 yh> (semantic) what did I conclude about competing risks?
 yh> find recent arXiv papers on recurrent-event survival and save a summary note
-python -m local_agent.voice          # talk to the agent (Enter to speak)
+python -m local_agent.voice          # Enter = start rec, Enter = stop, Ctrl-C = quit
 ```
 
 ## 4. Optional: meeting transcription (whisper.cpp)

@@ -136,6 +136,16 @@ crontab -e
 #   python -m local_agent.batch --approve jobs/daily-digest.txt >> ~/jobs/digest.log 2>&1
 ```
 
+#### Step 8 — Extra capabilities (optional)
+Semantic search, voice, device tools, research, stats — quick enable:
+```bash
+ollama pull nomic-embed-text && python -m local_agent.vault_index   # semantic search
+pkg install -y termux-api                                           # voice + clipboard/notify/location
+pip install matplotlib                                              # analyze_data plots
+# research (arXiv/PubMed) needs nothing
+```
+Full usage for each is in **"Additional capabilities — step by step"** below.
+
 #### Daily startup (three Termux tabs)
 ```bash
 # Tab 1 — Ollama (from $HOME)
@@ -334,35 +344,59 @@ Optional backends (the harness degrades gracefully without them):
 Read-only/analysis tools (SAFE) run immediately. Anything that writes/sends/executes
 (GUARDED) asks first in `hitl` mode.
 
-## Semantic vault search (ask by meaning)
+## Additional capabilities — step by step
 
-`vault_search` is keyword-based; `vault_semantic_search` finds notes by *concept* using
-local embeddings. Pull a small embed model and build the index once:
+Each is local and low-risk. Enable the ones you want.
 
+### A. Semantic vault search (ask by meaning)
+`vault_search` is keyword-based; `vault_semantic_search` finds notes by *concept*.
 ```bash
-ollama pull nomic-embed-text
-python -m local_agent.vault_index            # incremental; --rebuild to start fresh
+ollama pull nomic-embed-text                 # 1. embedding model (~274 MB)
+python -m local_agent.vault_index            # 2. build the index (--rebuild to redo)
 ```
-Then the agent can answer "what did I conclude about competing risks?" and find the
-Fine-Gray note even if those words never appear. Re-run the indexer after big vault
-changes (it only re-embeds changed notes). Index lives at `AGENT_VAULT_INDEX`.
+```
+yh> (semantic) what did I conclude about competing risks?
+```
+3. Re-run `python -m local_agent.vault_index` after big edits — it only re-embeds
+   changed notes. Index lives at `AGENT_VAULT_INDEX`.
 
-## Voice loop (talk to it)
-
-Hands-free, fully on-device — record → whisper → agent → speak:
+### B. Voice loop (talk to it) — record → whisper → agent → speak
 ```bash
-pkg install -y termux-api        # mic + TTS
-python -m local_agent.voice      # press Enter to talk, Ctrl-C to quit
+pkg install -y termux-api                     # 1. mic + TTS (and the Termux:API app)
+# 2. needs a whisper backend (see Step 4 above)
+python -m local_agent.voice                   # 3. start it
 ```
-Needs a whisper backend (Step 4). Guarded actions are auto-denied in voice mode.
+**Controls:** `Enter` = **start** recording → `Enter` again = **stop** (it then
+transcribes, answers, and speaks) → `Ctrl-C` = quit. `--max-seconds N` caps a
+recording. Guarded actions are auto-denied in voice mode.
 
-## Device & research tools
+### C. Device tools (clipboard / notify / location / speak)
+```bash
+pkg install -y termux-api                     # one-time
+```
+```
+yh> rephrase what I just copied                       # clipboard(read) → rephrase
+yh> remind me to call the lab                          # notify
+yh> what's near me right now?                          # location → maps
+```
 
-- **`clipboard`** read/write, **`notify`** (great for cron digests), **`location`**,
-  **`speak`** — all via `pkg install termux-api`.
-- **`research`** — search arXiv or PubMed and summarize into the vault (no key).
-- **`analyze_data`** now reports per-column quartiles/sd, pairwise correlations, and an
-  optional histogram (`plot=/path.png`, needs `pip install matplotlib`).
+### D. Research (arXiv / PubMed)
+No install needed.
+```
+yh> find recent arXiv papers on recurrent-event survival and save a summary to Research/
+yh> search PubMed for OMOP CDM validation studies
+```
+
+### E. Data & stats (CSV)
+```bash
+pip install matplotlib                         # optional — only for histograms
+```
+```
+yh> analyze /sdcard/Download/cohort.csv — give me the stats and correlations
+yh> analyze /sdcard/Download/cohort.csv and save a histogram to /sdcard/Download/age.png
+```
+`analyze_data` reports per-column quartiles/sd and pairwise correlations always; the
+plot needs matplotlib.
 
 ## Hybrid routing (offload hard tasks to a LAN box)
 
