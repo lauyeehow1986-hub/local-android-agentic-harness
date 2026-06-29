@@ -606,6 +606,57 @@ def test_make_html_report(reg, ctx, tmp_path):
     assert "<h1>T</h1>" in out_path.read_text()
 
 
+def test_make_html_report_with_chart(reg, ctx, tmp_path):
+    out_path = tmp_path / "r.html"
+    reg["make_html_report"].fn(
+        {
+            "title": "Trends",
+            "out_path": str(out_path),
+            "sections": [
+                {
+                    "heading": "Key Trends",
+                    "body": "Age vs CVD.",
+                    "table": [["metric", "value"], ["corr", "0.36"]],
+                    "chart": {"type": "bar", "labels": ["a", "b"], "values": [1, 2], "title": "C"},
+                }
+            ],
+        },
+        ctx,
+    )
+    doc = out_path.read_text()
+    assert "<svg" in doc and "<rect" in doc          # an actual chart rendered
+    assert "<table" in doc                           # table rendered
+    assert "Key Trends" in doc
+
+
+def test_make_html_report_chart_from_csv(reg, ctx, tmp_path):
+    csv_path = tmp_path / "d.csv"
+    csv_path.write_text("age,risk\n40,1\n50,2\n60,3\n")
+    out_path = tmp_path / "r.html"
+    reg["make_html_report"].fn(
+        {
+            "title": "From CSV",
+            "out_path": str(out_path),
+            "sections": [
+                {"heading": "Risk", "chart": {"type": "line", "csv": str(csv_path), "y": "risk", "x": "age"}}
+            ],
+        },
+        ctx,
+    )
+    doc = out_path.read_text()
+    assert "<svg" in doc and "<polyline" in doc       # line chart from real data
+
+
+def test_make_html_report_reports_no_charts(reg, ctx, tmp_path):
+    out_path = tmp_path / "r.html"
+    out = reg["make_html_report"].fn(
+        {"title": "T", "sections": ["Introduction", "Visualizations"], "out_path": str(out_path)},
+        ctx,
+    )
+    # bare-string sections → the result tells the model no charts were added
+    assert "no charts" in out
+
+
 def test_make_slides(reg, ctx, tmp_path):
     out_path = tmp_path / "s.md"
     reg["make_slides"].fn(
