@@ -11,20 +11,50 @@ harness is self-contained.
 > - **`prompts/agent_system.md`** — the runtime system prompt loaded into the model each
 >   turn. It is the model-facing contract (ReAct format + tool spec).
 
+## Capabilities at a glance
+
+- **Notes (Obsidian vault)** — keyword search, **semantic search** (embeddings), read, list,
+  and approval-gated writes; "today" resolves to `Daily/<date>.md`.
+- **Web & research** — search, scrape (with optional **JS rendering** via a headless Chrome),
+  and **academic search** (arXiv / PubMed).
+- **Documents & images** — **PDF** (text + scanned/encrypted **OCR**), **image OCR** via
+  Tesseract (accurate on receipts — no hallucinated digits) and scene description via a vision model.
+- **Speech** — **meeting transcription** (whisper.cpp) → structured **meeting notes**, and a
+  hands-free **voice loop** (talk to the agent, it speaks back).
+- **Maps & device** — directions/place search, open an app/deeplink (Maps, Grab), clipboard,
+  notifications, GPS location, text-to-speech, "newest file" lookup.
+- **Data** — CSV stats (quartiles, sd, correlations) + optional histogram.
+- **Generation** — slide deck, HTML report, rephrase.
+- **Automation & ops** — **batch/cron** jobs, an **eval harness** with **A/B model comparison**,
+  **hybrid routing** to a LAN box, and token **streaming**.
+- **Safe by design** — every write/send/shell action is approval-gated (`hitl`), with an
+  always-confirm set even in `full`; nothing touches money or credentials.
+
 ## What's here
 
 ```
-prompts/agent_system.md     # runtime system prompt (ReAct contract + tool spec)
+prompts/
+  agent_system.md           # runtime system prompt (full ReAct contract + tool spec)
+  agent_system_compact.md   # leaner prompt for speed (AGENT_SYSTEM_PROMPT)
 local_agent/
-  config.py                 # paths, model, Ollama URL, autonomy, num_ctx … (env-overridable)
-  ollama_client.py          # thin stdlib (urllib) client; configurable base_url
+  config.py                 # all settings (env-overridable)
+  ollama_client.py          # stdlib (urllib) client: generate/stream/embed, configurable base_url
   parser.py                 # THOUGHT/ACTION/INPUT & THOUGHT/FINAL parser (tolerant)
   approval.py               # SAFE/GUARDED policy + always-confirm set
-  loop.py                   # the ReAct controller
-  tools/                    # vault, web, data, generate, system tools + registry
-  frontends/terminal.py     # v1 stdin/stdout REPL + approval prompts
-  main.py                   # entrypoint
-tests/                      # parser, approval, tools, full-loop (no Ollama needed)
+  loop.py                   # the ReAct controller (streaming, hybrid routing, DATE inject)
+  tools/                    # vault, web, data, generate, system, maps, device, research + registry
+  frontends/terminal.py     # stdin/stdout REPL + approval prompts
+  main.py                   # entrypoint (REPL / one-shot)
+  batch.py                  # non-interactive runner for cron / task lists
+  eval.py                   # eval harness + A/B model comparison
+  vault_index.py            # semantic search index (embeddings)
+  voice.py                  # voice loop (mic → whisper → agent → TTS)
+scripts/
+  setup-termux.sh           # one-shot installer (idempotent)
+  browser-bridge/           # Node + Termux-Chromium HTTP bridge for JS rendering
+jobs/                       # example batch jobs (daily-digest, weekly-review)
+docs/TERMUX_SETUP.md        # full step-by-step phone setup + troubleshooting
+tests/                      # 118 tests — parser, approval, tools, loop, eval, capabilities …
 ```
 
 ## Design priorities (in order)
