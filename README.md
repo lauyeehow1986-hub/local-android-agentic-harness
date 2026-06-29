@@ -287,7 +287,7 @@ your hands by design.
 `vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`*(G)* ·
 `web_search` `web_scrape` `browser`*(G)* `research` ·
 `analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
-`make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
+`make_slides`*(G)* `make_html_report`*(G)* `report_csv`*(G)* `rephrase` ·
 `maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
 `latest_file` `shell`*(G)* `git_sync`*(G)* `request_approval`
 
@@ -376,6 +376,7 @@ Optional backends (the harness degrades gracefully without them):
 | "Analyse the latest screenshot and add it to today's notes" | `latest_file` → `analyze_image` → `vault_write` |
 | "Transcribe the latest recording in Downloads" | `latest_file` (audio) → `transcribe` |
 | "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
+| "Build a report of /sdcard/cohort.csv with charts" | `request_approval` → `report_csv` (stats + correlations + histograms) |
 | "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
 | "Commit and push my vault" | `request_approval` → `git_sync` |
 

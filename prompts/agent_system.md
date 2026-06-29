@@ -110,6 +110,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Generation
 - `make_slides` [GUARDED] — build a slide deck (writes a file). `{"title": str, "outline": [str], "out_path": str}`
 - `make_html_report` [GUARDED] — build an HTML report (writes a file). Each section is an OBJECT with real content (a bare string makes an empty section). Charts render as inline SVG. `{"title": str, "out_path": str, "sections": [{"heading": str, "body": str, "table": [[...]], "chart": {"type":"bar"|"line","labels":[...],"values":[...],"title":str}}]}`. To chart REAL data, use `"chart": {"type":"bar","csv":"/path.csv","y":"colname","x":"colname","title":str}` instead of typing numbers. Get trends/numbers from `analyze_data` first; don't claim a chart you didn't add.
+- `report_csv` [GUARDED] — one-shot CSV → HTML report (summary stats table, correlations, a histogram chart per numeric column). Prefer this for "report/visualize this dataset". `{"csv": str, "out_path": str, "title": str, "columns": [str], "max_charts": int}` (only csv & out_path required)
 - `rephrase` [SAFE] — rewrite text (email/sentence). `{"text": str, "style": str}`
 
 ### Maps & device

@@ -205,6 +205,113 @@ def make_html_report(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"wrote HTML report: {written} ({len(sections)} sections{extra})"
 
 
+def _histogram(values: list[float], bins: int = 12):
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return [f"{lo:.3g}"], [len(values)]
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in values:
+        i = min(bins - 1, int((v - lo) / width))
+        counts[i] += 1
+    labels = [f"{lo + i * width:.3g}" for i in range(bins)]
+    return labels, counts
+
+
+def report_csv(args: dict[str, Any], ctx: ToolContext) -> str:
+    """One-shot: turn a CSV into a full HTML report — summary stats table,
+    pairwise correlations, and a distribution (histogram) chart per numeric
+    column. No need to hand-build sections.
+
+    {"csv": str, "out_path": str, "title": str?, "columns": [str]?, "max_charts": int?}
+    """
+    import csv as _csv
+    import statistics
+
+    from .data import _describe, _numeric_columns
+
+    csv_path = str(args.get("csv", "")).strip()
+    out_path = str(args.get("out_path", "report.html")).strip()
+    if not csv_path:
+        return "error: 'csv' is required"
+    p = Path(csv_path).expanduser()
+    if not p.exists():
+        return f"csv not found: {csv_path}"
+    title = str(args.get("title", "")).strip() or f"Report: {p.name}"
+    only = args.get("columns") or []
+    max_charts = int(args.get("max_charts", 6) or 6)
+
+    try:
+        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
+            rows = list(_csv.reader(f))
+    except OSError as e:
+        return f"read error: {e}"
+    if len(rows) < 2:
+        return "empty or header-only CSV"
+    header, data_rows = rows[0], rows[1:]
+    numeric = _numeric_columns(header, data_rows)
+    if only:
+        numeric = {k: v for k, v in numeric.items() if k in only}
+
+    sections: list[dict] = [
+        {"heading": "Overview", "body": f"{len(data_rows)} rows × {len(header)} columns. "
+         f"Columns: {', '.join(header)}. Numeric: {', '.join(numeric) or 'none'}."}
+    ]
+
+    # Summary statistics table.
+    stat_rows = [["column", "n", "min", "q1", "median", "q3", "max", "mean", "sd"]]
+    for col, nums in numeric.items():
+        n = len(nums)
+        qs = statistics.quantiles(nums, n=4) if n >= 4 else [min(nums), statistics.median(nums), max(nums)]
+        stat_rows.append([
+            col, n, f"{min(nums):.3g}", f"{qs[0]:.3g}", f"{statistics.median(nums):.3g}",
+            f"{qs[-1]:.3g}", f"{max(nums):.3g}", f"{statistics.fmean(nums):.3g}",
+            f"{statistics.pstdev(nums) if n > 1 else 0:.3g}",
+        ])
+    if len(stat_rows) > 1:
+        sections.append({"heading": "Summary statistics", "table": stat_rows})
+
+    # Pairwise correlations.
+    cols = list(numeric.items())
+    corr_rows = [["pair", "correlation"]]
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            (n1, v1), (n2, v2) = cols[i], cols[j]
+            m = min(len(v1), len(v2))
+            if m >= 3:
+                try:
+                    corr_rows.append([f"{n1} × {n2}", f"{statistics.correlation(v1[:m], v2[:m]):.2f}"])
+                except (statistics.StatisticsError, ValueError):
+                    pass
+    if len(corr_rows) > 1:
+        sections.append({"heading": "Correlations", "table": corr_rows})
+
+    # Distribution chart per numeric column (capped).
+    for col, nums in list(numeric.items())[:max_charts]:
+        labels, counts = _histogram(nums)
+        sections.append({
+            "heading": f"Distribution: {col}",
+            "chart": {"type": "bar", "labels": labels, "values": counts, "title": f"{col} histogram"},
+        })
+
+    # Optional short narrative from the local model.
+    if ctx.client is not None and len(stat_rows) > 1:
+        try:
+            summary_txt = "\n".join(", ".join(map(str, r)) for r in stat_rows[:8])
+            narrative = ctx.client.generate(
+                f"Dataset stats:\n{summary_txt}\n\nWrite 2-3 sentences on the key trends.",
+                system="You are a terse data analyst. Only state what the numbers support.",
+            ).strip()
+            if narrative:
+                sections.insert(1, {"heading": "Key trends", "body": narrative})
+        except Exception:  # noqa: BLE001
+            pass
+
+    return make_html_report(
+        {"title": title, "out_path": out_path, "sections": sections}, ctx
+    )
+
+
 def rephrase(args: dict[str, Any], ctx: ToolContext) -> str:
     text = str(args.get("text", "")).strip()
     style = str(args.get("style", "clear and concise")).strip()
@@ -236,7 +343,15 @@ TOOLS = [
         tag="GUARDED",
         fn=make_html_report,
         required=("title", "sections", "out_path"),
-        description="Build an HTML report (writes a file).",
+        description="Build an HTML report with text/tables/inline-SVG charts (writes a file).",
+    ),
+    Tool(
+        name="report_csv",
+        tag="GUARDED",
+        fn=report_csv,
+        required=("csv", "out_path"),
+        optional=("title", "columns", "max_charts"),
+        description="One-shot CSV → HTML report: stats table, correlations, distribution charts.",
     ),
     Tool(
         name="rephrase",

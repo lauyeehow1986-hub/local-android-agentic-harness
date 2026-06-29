@@ -31,6 +31,7 @@ CONTRACT_TOOLS = {
     "meeting_notes",
     "make_slides",
     "make_html_report",
+    "report_csv",
     "rephrase",
     "shell",
     "git_sync",
@@ -74,6 +75,7 @@ def test_guarded_set(reg):
         "browser",
         "make_slides",
         "make_html_report",
+        "report_csv",
         "shell",
         "git_sync",
         "open_app",
@@ -655,6 +657,26 @@ def test_make_html_report_reports_no_charts(reg, ctx, tmp_path):
     )
     # bare-string sections → the result tells the model no charts were added
     assert "no charts" in out
+
+
+def test_report_csv_one_shot(reg, ctx, tmp_path):
+    csv_path = tmp_path / "cvd.csv"
+    csv_path.write_text("age,cvddef\n40,0.1\n50,0.2\n60,0.35\n70,0.5\n")
+    out_path = tmp_path / "report.html"
+    out = reg["report_csv"].fn(
+        {"csv": str(csv_path), "out_path": str(out_path), "title": "CVD"}, ctx
+    )
+    assert "chart(s)" in out
+    doc = out_path.read_text()
+    assert "Summary statistics" in doc      # stats table
+    assert "Correlations" in doc            # correlation table
+    assert "<svg" in doc and "<rect" in doc # histogram charts
+    assert "age" in doc and "cvddef" in doc
+
+
+def test_report_csv_missing_file(reg, ctx, tmp_path):
+    out = reg["report_csv"].fn({"csv": str(tmp_path / "nope.csv"), "out_path": str(tmp_path / "r.html")}, ctx)
+    assert "not found" in out
 
 
 def test_make_slides(reg, ctx, tmp_path):
