@@ -35,6 +35,7 @@ CONTRACT_TOOLS = {
     "shell",
     "git_sync",
     "open_app",
+    "latest_file",
     "maps",
     "clipboard",
     "notify",

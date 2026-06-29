@@ -148,6 +148,10 @@ class Config:
     vault_path: Path = field(
         default_factory=lambda: Path(_env_str("AGENT_VAULT", DEFAULT_VAULT))
     )
+    # Default folder for latest_file (e.g. "the latest screenshot/receipt").
+    downloads_dir: str = field(
+        default_factory=lambda: _env_str("AGENT_DOWNLOADS", "/storage/emulated/0/Download")
+    )
 
     # --- Loop / autonomy ---
     autonomy: str = field(default_factory=lambda: _env_str("AUTONOMY", "hitl"))

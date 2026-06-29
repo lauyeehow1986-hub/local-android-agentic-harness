@@ -254,7 +254,7 @@ your hands by design.
 `analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `rephrase` ·
 `maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
-`shell`*(G)* `git_sync`*(G)* `request_approval`
+`latest_file` `shell`*(G)* `git_sync`*(G)* `request_approval`
 
 **(G) = GUARDED** (writes/deletes/sends/shell). In `hitl` they require approval; in `full`
 they run directly **except** the always-confirm set (shell `rm`/`mv`/`git push`/`curl|sh`/
@@ -338,6 +338,8 @@ Optional backends (the harness degrades gracefully without them):
 | "Directions from my office to Marina Bay Sands" | `maps` (origin/destination) |
 | "Find the nearest pharmacy and open it in Maps" | `maps` → `request_approval` → `open_app` |
 | "Open Grab to order chicken rice" | `open_app` (opens the Grab app; **you** pick + pay) |
+| "Analyse the latest screenshot and add it to today's notes" | `latest_file` → `analyze_image` → `vault_write` |
+| "Transcribe the latest recording in Downloads" | `latest_file` (audio) → `transcribe` |
 | "Make an HTML report titled 'Weekly' at …/weekly.html" | `request_approval` → `make_html_report` |
 | "Build slides on X to …/deck.md" | `request_approval` → `make_slides` |
 | "Commit and push my vault" | `request_approval` → `git_sync` |

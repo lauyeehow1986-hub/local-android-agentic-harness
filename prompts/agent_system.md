@@ -121,6 +121,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 - `speak` [SAFE] — speak text aloud via Android TTS. `{"text": str}`
 
 ### System / control
+- `latest_file` [SAFE] — path of the newest file in a folder (optionally by type), so the user can say "the latest screenshot" without dictating a path. Chain its output into `analyze_image`/`analyze_pdf`/`transcribe`. `{"folder": str, "type": "image"|"audio"|"pdf"|".ext", "recursive": bool}` (all optional; defaults to Downloads)
 - `shell` [GUARDED] — run a Termux shell command. `{"cmd": str}`
 - `request_approval` [SAFE to call] — pause for user decision. `{"action": str, "details": str}`
 - `git_sync` [GUARDED] — commit & push vault or repo. `{"repo_path": str, "message": str}`

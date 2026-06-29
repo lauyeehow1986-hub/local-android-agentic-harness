@@ -36,6 +36,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - maps [S] {"query": str} OR {"origin": str, "destination": str}  (place search / driving directions, returns Maps link)
 - open_app [G] {"target": str}  (open a URL/deeplink on the phone, e.g. Grab app or Maps nav; cannot order/pay)
 - clipboard [S] {"mode": "read"|"write", "text": str} · notify [S] {"title": str, "content": str} · location [S] {"provider": str} · speak [S] {"text": str}
+- latest_file [S] {"folder": str, "type": "image"|"audio"|"pdf"|".ext"}  (newest file path; chain into analyze_image/pdf/transcribe; default Downloads)
 - shell [G] {"cmd": str}
 - git_sync [G] {"repo_path": str, "message": str}
 - request_approval [S] {"action": str, "details": str}

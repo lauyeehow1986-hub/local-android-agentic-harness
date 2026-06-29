@@ -74,6 +74,53 @@ def git_sync(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"rc={proc.returncode}\n{out}"[:1500]
 
 
+_LATEST_TYPE_EXTS = {
+    "image": {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"},
+    "screenshot": {".png", ".jpg", ".jpeg"},
+    "audio": {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac"},
+    "pdf": {".pdf"},
+}
+
+
+def latest_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Return the path of the most recently modified file in a folder — so the
+    user can say "the latest screenshot" instead of dictating a path.
+
+    {"folder": str, "type": "image"|"audio"|"pdf"|".ext", "recursive": bool}
+    Defaults to the Downloads folder. SAFE (read-only).
+    """
+    folder = str(args.get("folder", "")).strip() or getattr(
+        ctx.config, "downloads_dir", "/storage/emulated/0/Download"
+    )
+    type_ = str(args.get("type", "")).strip().lower()
+    recursive = bool(args.get("recursive", False))
+    base = Path(folder).expanduser()
+    if not base.exists() or not base.is_dir():
+        return f"folder not found: {folder}"
+
+    exts = _LATEST_TYPE_EXTS.get(type_)
+    if not exts and type_:
+        exts = {type_ if type_.startswith(".") else "." + type_}
+
+    it = base.rglob("*") if recursive else base.iterdir()
+    best_mtime = -1.0
+    best: Path | None = None
+    for f in it:
+        try:
+            if not f.is_file():
+                continue
+            if exts and f.suffix.lower() not in exts:
+                continue
+            mt = f.stat().st_mtime
+        except OSError:
+            continue
+        if mt > best_mtime:
+            best_mtime, best = mt, f
+    if best is None:
+        return f"no {type_ + ' ' if exts else ''}files found in {folder}"
+    return str(best)
+
+
 def open_app(args: dict[str, Any], ctx: ToolContext) -> str:
     """Open a URL or app deeplink on the phone (Termux).
 
@@ -135,6 +182,13 @@ TOOLS = [
         fn=open_app,
         required=("target",),
         description="Open a URL/app deeplink on the phone (e.g. Maps nav, Grab app). Cannot pay/order.",
+    ),
+    Tool(
+        name="latest_file",
+        tag="SAFE",
+        fn=latest_file,
+        optional=("folder", "type", "recursive"),
+        description="Path of the newest file in a folder (optionally by type) — avoids dictating paths.",
     ),
     Tool(
         name="request_approval",

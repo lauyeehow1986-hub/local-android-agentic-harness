@@ -134,6 +134,44 @@ def test_analyze_data_richer_stats(tmp_path):
     assert "1.00" in out
 
 
+def test_latest_file_picks_newest(tmp_path):
+    import os
+    import time
+
+    folder = tmp_path / "dl"
+    folder.mkdir()
+    old = folder / "old.png"
+    old.write_bytes(b"x")
+    time.sleep(0.01)
+    new = folder / "new.png"
+    new.write_bytes(b"y")
+    # make 'new' definitively newer
+    os.utime(new, (time.time() + 10, time.time() + 10))
+    out = _reg()["latest_file"].fn({"folder": str(folder)}, _ctx(tmp_path))
+    assert out == str(new)
+
+
+def test_latest_file_filters_by_type(tmp_path):
+    import os
+    import time
+
+    folder = tmp_path / "dl"
+    folder.mkdir()
+    img = folder / "a.png"
+    img.write_bytes(b"x")
+    pdf = folder / "b.pdf"
+    pdf.write_bytes(b"y")
+    os.utime(pdf, (time.time() + 10, time.time() + 10))  # pdf is newest overall
+    # ask for the newest IMAGE → must skip the newer pdf
+    out = _reg()["latest_file"].fn({"folder": str(folder), "type": "image"}, _ctx(tmp_path))
+    assert out == str(img)
+
+
+def test_latest_file_missing_folder(tmp_path):
+    out = _reg()["latest_file"].fn({"folder": str(tmp_path / "nope")}, _ctx(tmp_path))
+    assert "folder not found" in out
+
+
 def test_voice_spoken_form_summarizes_long(tmp_path):
     from local_agent import voice
     from local_agent.loop import Agent
