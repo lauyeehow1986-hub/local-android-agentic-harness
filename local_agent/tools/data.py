@@ -601,10 +601,12 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
         exe = shutil.which("whisper")
         if exe:
             model = getattr(ctx.config, "whisper_model", "base")
+            bs = str(getattr(ctx.config, "whisper_beam_size", 5))
             with tempfile.TemporaryDirectory() as td:
                 subprocess.run(
                     [exe, str(p), "--model", model, "--output_format", "txt",
-                     "--output_dir", td, "--task", "transcribe", *lang_args_openai],
+                     "--output_dir", td, "--task", "transcribe", "--beam_size", bs,
+                     *lang_args_openai],
                     capture_output=True, text=True, timeout=3600, check=True,
                 )
                 out_txt = Path(td) / (p.stem + ".txt")
@@ -623,7 +625,8 @@ def _transcribe_audio(p: Path, ctx: ToolContext, language: str) -> str:
             try:
                 with tempfile.TemporaryDirectory() as td:
                     of = Path(td) / "out"
-                    cmd = [exe, "-m", model, "-f", str(wav), "-otxt", "-of", str(of)]
+                    bs = str(getattr(ctx.config, "whisper_beam_size", 5))
+                    cmd = [exe, "-m", model, "-f", str(wav), "-otxt", "-of", str(of), "-bs", bs]
                     if language:
                         cmd += ["-l", language]
                     subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)

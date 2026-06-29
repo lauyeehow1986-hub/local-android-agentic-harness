@@ -242,6 +242,7 @@ your hands by design.
 | `AGENT_WHISPER_MODEL` | `base` | model for openai/faster-whisper (tiny…large) |
 | `AGENT_WHISPER_CPP_MODEL` | _(unset)_ | path to a ggml model for whisper.cpp |
 | `AGENT_WHISPER_LANG` | _(auto)_ | language hint, e.g. `en` |
+| `AGENT_WHISPER_BEAM` | `5` | beam width (higher = more accurate, slower; 1 = greedy) |
 | `AGENT_ENABLE_BROWSER` | `0` | gate the local Playwright browser tool (desktop only) |
 | `AGENT_BROWSER_REMOTE_URL` | _(unset)_ | remote headless Chrome (browserless) for `web_scrape render=true` |
 | `AGENT_BROWSER_REMOTE_TOKEN` | _(unset)_ | token for the remote browser, if it requires one |
@@ -369,6 +370,14 @@ python -m local_agent.voice                   # 3. start it
 **Controls:** `Enter` = **start** recording → `Enter` again = **stop** (it then
 transcribes, answers, and speaks) → `Ctrl-C` = quit. `--max-seconds N` caps a
 recording. Guarded actions are auto-denied in voice mode.
+
+By default it **speaks a 1–2 sentence summary** (the full answer still prints) so TTS
+doesn't read a wall of text; use `--full-speech` to speak everything.
+
+**Accuracy:** `base.en` is fast but slips on connected speech; for dictation use
+`small.en` (`sh ~/whisper.cpp/models/download-ggml-model.sh small.en`, then point
+`AGENT_WHISPER_CPP_MODEL` at it). Beam search is on by default (`AGENT_WHISPER_BEAM=5`),
+which improves accuracy on any model — lower it to `1` for max speed.
 
 ### C. Device tools (clipboard / notify / location / speak)
 ```bash

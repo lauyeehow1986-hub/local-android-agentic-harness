@@ -85,11 +85,33 @@ class VoiceFrontend:
     def ask_approval(self, action, details): return "n"  # voice mode: no unattended writes
 
 
+def _spoken_form(agent, text: str, *, full: bool, max_len: int = 240) -> str:
+    """Return a short version of `text` for TTS (long answers are awkward aloud).
+
+    Speaks the whole thing if --full-speech, or if it's already short. Otherwise
+    asks the model for a 1-2 sentence spoken summary; falls back to a truncation.
+    """
+    if full or len(text) <= max_len:
+        return text
+    try:
+        s = agent.client.generate(
+            f"Condense this into one or two short, natural sentences to read aloud:\n{text}",
+            system="You produce a brief spoken summary. No preamble.",
+        ).strip()
+        return s or text[:max_len]
+    except Exception:  # noqa: BLE001
+        return text[:max_len]
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Voice loop for local-agent.")
     ap.add_argument("--max-seconds", type=int, default=180, help="safety cap per recording")
+    ap.add_argument(
+        "--full-speech", action="store_true",
+        help="speak the entire answer (default: speak a 1-2 sentence summary)",
+    )
     args = ap.parse_args(argv)
 
     from .config import load_config
@@ -129,7 +151,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         fe = VoiceFrontend()
         answer = agent.run_task(text, fe)
         print(f"agent: {answer}")
-        _speak(answer)
+        _speak(_spoken_form(agent, answer, full=args.full_speech))
 
 
 if __name__ == "__main__":

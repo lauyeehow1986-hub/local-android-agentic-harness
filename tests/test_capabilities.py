@@ -134,6 +134,33 @@ def test_analyze_data_richer_stats(tmp_path):
     assert "1.00" in out
 
 
+def test_voice_spoken_form_summarizes_long(tmp_path):
+    from local_agent import voice
+    from local_agent.loop import Agent
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    cfg.log_path = tmp_path / "agent.log"
+    cfg.system_prompt_path = (
+        Path(__file__).resolve().parent.parent / "prompts" / "agent_system.md"
+    )
+
+    class _C:
+        def generate(self, *a, **k):
+            return "Short spoken version."
+
+        def health(self):
+            return True
+
+    agent = Agent(config=cfg, client=_C())
+    long = "word " * 200
+    assert voice._spoken_form(agent, long, full=False) == "Short spoken version."
+    # short answers and --full-speech are spoken verbatim
+    assert voice._spoken_form(agent, "hi there", full=False) == "hi there"
+    assert voice._spoken_form(agent, long, full=True) == long
+
+
 def test_analyze_data_plot_skips_without_matplotlib(tmp_path, monkeypatch):
     import builtins
 

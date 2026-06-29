@@ -117,6 +117,11 @@ class Config:
     whisper_language: str = field(
         default_factory=lambda: _env_str("AGENT_WHISPER_LANG", "")
     )
+    # Beam search width — higher = more accurate, slower. 1 = greedy (fastest).
+    # A big accuracy win for dictation even on the base model.
+    whisper_beam_size: int = field(
+        default_factory=lambda: _env_int("AGENT_WHISPER_BEAM", 5)
+    )
     # num_ctx: keep small or the KV cache OOM-kills on 8 GB. NOT the 256K max.
     num_ctx: int = field(default_factory=lambda: _env_int("AGENT_NUM_CTX", 6144))
     temperature: float = field(
