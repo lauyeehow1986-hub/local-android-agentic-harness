@@ -30,16 +30,26 @@ def _have(binary: str) -> bool:
 
 
 def _start_record(max_seconds: int) -> Optional[Path]:
-    """Begin recording (returns immediately). Stops on _stop_record() or the cap."""
+    """Begin recording (returns immediately). Stops on _stop_record() or the cap.
+
+    Records .m4a — termux-microphone-record's native format; our transcribe path
+    converts it to WAV via ffmpeg for whisper.cpp.
+    """
     if not _have("termux-microphone-record"):
         print("termux-microphone-record not found — `pkg install termux-api`.", file=sys.stderr)
         return None
-    wav = Path(tempfile.mkstemp(suffix=".wav")[1])
-    subprocess.run(
-        ["termux-microphone-record", "-f", str(wav), "-l", str(max_seconds)],
-        capture_output=True,
+    rec = Path(tempfile.mkstemp(suffix=".m4a")[1])
+    proc = subprocess.run(
+        ["termux-microphone-record", "-f", str(rec), "-l", str(max_seconds)],
+        capture_output=True, text=True,
     )
-    return wav
+    msg = (proc.stdout or "").strip() + (proc.stderr or "").strip()
+    # Surface recorder errors (no Termux:API app, mic permission denied, busy…).
+    if proc.returncode != 0 or "error" in msg.lower() or "failed" in msg.lower():
+        print(f"recorder: {msg or 'failed to start (check Termux:API app + mic permission)'}",
+              file=sys.stderr)
+        return None
+    return rec
 
 
 def _stop_record() -> None:
