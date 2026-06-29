@@ -348,6 +348,69 @@ Optional backends (the harness degrades gracefully without them):
   ## Action Items` (owner table) `/ ## Follow-ups`, plus YAML frontmatter. The agent then
   saves it with `vault_write` (approved in `hitl`). Same Whisper backends as `transcribe`.
 
+## Tool reference (every tool)
+
+You don't call tools directly — you ask in plain language and the agent picks them.
+Below: each tool, its tag, arguments (**bold** = required), what it does, an example ask,
+and any one-time setup. **(G) = GUARDED** (approval-gated).
+
+### Vault (notes)
+| Tool | Args | What it does · example |
+|---|---|---|
+| `vault_search` | **query**, limit | Keyword search. *"search my notes for OMOP"* |
+| `vault_semantic_search` | **query**, limit | Meaning-based search (build the index first: `python -m local_agent.vault_index`). *"(semantic) what did I conclude about competing risks?"* |
+| `vault_read` | **path** | Read a note. *"read Research/omop.md"* |
+| `vault_list` | folder | List notes in a folder. *"list my Daily notes"* |
+| `vault_write` *(G)* | **path**, **content**, mode | Create/append/overwrite a note (one per call). *"add a note that I deployed v10.13 to today's log"* |
+
+### Web & research
+| Tool | Args | What it does · example |
+|---|---|---|
+| `web_search` | **query** | DuckDuckGo instant answer. *"web search the OMOP CDM spec"* |
+| `web_scrape` | **url**, render | Fetch a page as text; `render=true` runs JS via a headless Chrome (set `AGENT_BROWSER_REMOTE_URL`; see *Optional backends → Browsing JS-heavy pages*). *"summarize https://… with rendering"* |
+| `research` | **query**, source, limit | arXiv / PubMed papers (titles, abstracts, links). *"find arXiv papers on recurrent-event survival"* |
+| `browser` *(G)* | **steps** | Full Playwright click/fill (desktop/LAN only; off by default). |
+
+### Documents, images, data
+| Tool | Args | What it does · example · setup |
+|---|---|---|
+| `analyze_pdf` | **path**, task | PDF text → summary; auto-OCR for scanned PDFs. *"summarize the PDF at /sdcard/Download/x.pdf"* · `pip install pypdf` (+ poppler/pdf2image for scans) |
+| `analyze_image` | **path**, question, ocr | OCR text (Tesseract — accurate on receipts) or describe a scene (vision model). *"what's the total on the receipt at …"* · `pkg install tesseract`; `ollama pull moondream` |
+| `analyze_data` | **path**, task, plot | CSV stats + correlations, optional histogram. *"analyze cohort.csv, plot to age.png"* · `pip install matplotlib` for plots |
+| `report_csv` *(G)* | **csv**, **out_path**, title, columns, max_charts | **One-shot CSV → full HTML report** (stats + correlations + charts). *"build a report of cohort.csv with charts"* |
+
+### Speech (needs whisper.cpp — on-phone Setup Step 4)
+| Tool | Args | What it does · example |
+|---|---|---|
+| `transcribe` | **path**, task, language, diarize, translate | Audio → text; `task` summarizes; `translate=true` → English. *"transcribe the meeting at … and list action items"* |
+| `meeting_notes` | **path**, title, context, language, diarize, translate | Audio/transcript → structured note (Summary/Decisions/Action Items). *"make meeting notes from sync.m4a"* |
+
+### Generation
+| Tool | Args | What it does · example |
+|---|---|---|
+| `make_slides` *(G)* | **title**, **outline**, **out_path** | Markdown (Marp) slide deck. *"make slides on X to deck.md"* |
+| `make_html_report` *(G)* | **title**, **sections**, **out_path** | HTML report; sections can carry text, tables, and inline-SVG charts. |
+| `report_csv` *(G)* | (see above) | The easy path for data reports. |
+| `rephrase` | **text**, style | Rewrite text. *"rephrase what I copied to be polite"* |
+
+### Maps & device (`pkg install termux-api`, except `maps`)
+| Tool | Args | What it does · example |
+|---|---|---|
+| `maps` | query OR origin+destination | Place search / driving directions (returns a Maps link). *"directions from home to Marina Bay Sands"* |
+| `open_app` *(G)* | **target** | Open a URL/app deeplink (Maps nav, Grab). Cannot order/pay. *"open Grab to order chicken rice"* |
+| `clipboard` | mode, text | Read/write the clipboard. *"rephrase what I just copied"* |
+| `notify` | title, content | Push a notification (good for cron). |
+| `location` | provider | GPS/network location as JSON. *"what's near me?"* |
+| `speak` | **text** | Text-to-speech aloud. |
+
+### System / files / control
+| Tool | Args | What it does · example |
+|---|---|---|
+| `latest_file` | folder, type, recursive | Newest file in a folder (so you needn't dictate a path). *"analyse the latest screenshot"* |
+| `shell` *(G)* | **cmd** | Run a Termux command (destructive forms always confirm). |
+| `git_sync` *(G)* | **repo_path**, message | Commit & push a repo/vault. *"sync my vault"* |
+| `request_approval` | **action**, details | The model's way to ask before a guarded action (handled by the frontend). |
+
 ## Example prompts (what you can ask at `yh>`)
 
 | Ask | Tool(s) the agent uses |
