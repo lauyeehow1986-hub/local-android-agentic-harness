@@ -101,7 +101,8 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 - `research` [SAFE] — search academic papers (arXiv/PubMed); returns titles, abstracts, links. `{"query": str, "source": "arxiv"|"pubmed", "limit": int}`
 
 ### Data & files
-- `analyze_data` [SAFE] — run analysis on a CSV/dataset. `{"path": str, "task": str}`
+- `analyze_data` [SAFE] — run analysis on a CSV/dataset (stats, correlations, optional plot). `{"path": str, "task": str, "plot": str}`
+- `check_data` [SAFE] — data-quality check on a CSV: missing values, duplicate rows, type inconsistencies, outliers, constant/empty/ID columns. `{"path": str}`
 - `analyze_image` [SAFE] — read/analyze an image. For printed text (receipts, labels, documents) it uses the **Tesseract OCR engine** (accurate — a small VLM invents digits), then answers your question over the OCR text. Pure description/VQA uses an on-demand vision model. `{"path": str, "question": str, "ocr": bool}` (question & ocr optional)
 - `analyze_pdf` [SAFE] — extract text from a PDF and summarize/answer a task over it. `{"path": str, "task": str}`
 - `transcribe` [SAFE] — speech-to-text for meeting audio; optionally summarize / extract action items. `{"path": str, "task": str, "language": str, "diarize": bool, "translate": bool}` (translate=true outputs English from any language; all but path optional)

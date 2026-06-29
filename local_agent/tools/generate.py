@@ -228,7 +228,7 @@ def report_csv(args: dict[str, Any], ctx: ToolContext) -> str:
     import csv as _csv
     import statistics
 
-    from .data import _describe, _numeric_columns
+    from .data import _data_quality_issues, _describe, _numeric_columns
 
     csv_path = str(args.get("csv", "")).strip()
     out_path = str(args.get("out_path", "report.html")).strip()
@@ -257,6 +257,14 @@ def report_csv(args: dict[str, Any], ctx: ToolContext) -> str:
         {"heading": "Overview", "body": f"{len(data_rows)} rows × {len(header)} columns. "
          f"Columns: {', '.join(header)}. Numeric: {', '.join(numeric) or 'none'}."}
     ]
+
+    # Data quality.
+    issues = _data_quality_issues(header, data_rows)
+    sections.append({
+        "heading": "Data quality",
+        "table": [["issue"]] + [[i] for i in issues] if issues else None,
+        "body": None if issues else "No data-quality issues found.",
+    })
 
     # Summary statistics table.
     stat_rows = [["column", "n", "min", "q1", "median", "q3", "max", "mean", "sd"]]

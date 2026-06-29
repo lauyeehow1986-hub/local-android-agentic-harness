@@ -25,6 +25,7 @@ CONTRACT_TOOLS = {
     "browser",
     "research",
     "analyze_data",
+    "check_data",
     "analyze_image",
     "analyze_pdf",
     "transcribe",
@@ -657,6 +658,39 @@ def test_make_html_report_reports_no_charts(reg, ctx, tmp_path):
     )
     # bare-string sections → the result tells the model no charts were added
     assert "no charts" in out
+
+
+def test_check_data_finds_issues(reg, ctx, tmp_path):
+    csv_path = tmp_path / "dirty.csv"
+    # age has a missing + a non-numeric + an extreme outlier; country is constant;
+    # id is all-unique; one duplicate row.
+    csv_path.write_text(
+        "id,age,country\n"
+        "1,40,SG\n1,40,SG\n2,42,SG\n3,44,SG\n4,46,SG\n5,48,SG\n"
+        "6,50,SG\n7,52,SG\n8,54,SG\n9,,SG\n10,bad,SG\n11,9999,SG\n"
+    )
+    out = reg["check_data"].fn({"path": str(csv_path)}, ctx)
+    assert "Data-quality issues" in out
+    assert "missing: age" in out
+    assert "mixed-type: age" in out
+    assert "outliers: age" in out
+    assert "constant column: country" in out
+    assert "duplicate rows" in out
+
+
+def test_check_data_clean(reg, ctx, tmp_path):
+    csv_path = tmp_path / "clean.csv"
+    csv_path.write_text("x,y\n1,2\n3,4\n5,6\n")
+    out = reg["check_data"].fn({"path": str(csv_path)}, ctx)
+    assert "No data-quality issues" in out
+
+
+def test_report_csv_includes_data_quality(reg, ctx, tmp_path):
+    csv_path = tmp_path / "d.csv"
+    csv_path.write_text("age,grp\n40,SG\n,SG\n60,SG\n")
+    out_path = tmp_path / "r.html"
+    reg["report_csv"].fn({"csv": str(csv_path), "out_path": str(out_path)}, ctx)
+    assert "Data quality" in out_path.read_text()
 
 
 def test_report_csv_one_shot(reg, ctx, tmp_path):

@@ -286,7 +286,7 @@ your hands by design.
 
 `vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`*(G)* ·
 `web_search` `web_scrape` `browser`*(G)* `research` ·
-`analyze_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
+`analyze_data` `check_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `report_csv`*(G)* `rephrase` ·
 `maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
 `latest_file` `shell`*(G)* `git_sync`*(G)* `request_approval`
@@ -377,6 +377,7 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | `analyze_pdf` | **path**, task | PDF text → summary; auto-OCR for scanned PDFs. *"summarize the PDF at /sdcard/Download/x.pdf"* · `pip install pypdf` (+ poppler/pdf2image for scans) |
 | `analyze_image` | **path**, question, ocr | OCR text (Tesseract — accurate on receipts) or describe a scene (vision model). *"what's the total on the receipt at …"* · `pkg install tesseract`; `ollama pull moondream` |
 | `analyze_data` | **path**, task, plot | CSV stats + correlations, optional histogram. *"analyze cohort.csv, plot to age.png"* · `pip install matplotlib` for plots |
+| `check_data` | **path** | Data-quality check: missing values, duplicates, type inconsistencies, outliers, constant/empty/ID columns. *"check cohort.csv for data quality issues"* |
 | `report_csv` *(G)* | **csv**, **out_path**, title, columns, max_charts | **One-shot CSV → full HTML report** (stats + correlations + charts). *"build a report of cohort.csv with charts"* |
 
 ### Speech (needs whisper.cpp — on-phone Setup Step 4)
@@ -427,6 +428,7 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | "Search the web for the OMOP CDM standard" | `web_search` |
 | "Summarize https://example.com/article" | `web_scrape` |
 | "Analyze /sdcard/Download/data.csv — how many rows?" | `analyze_data` |
+| "Check my cohort.csv for data quality issues" | `check_data` |
 | "Describe /sdcard/DCIM/Camera/IMG_2026.jpg" | `analyze_image` |
 | "Read all the text in /sdcard/Download/receipt.png" | `analyze_image` (OCR) |
 | "Summarize the PDF at /sdcard/Download/paper.pdf" | `analyze_pdf` (text, or OCR if scanned) |

@@ -129,6 +129,98 @@ def analyze_data(args: dict[str, Any], ctx: ToolContext) -> str:
     return base
 
 
+_NA_TOKENS = {"", "na", "n/a", "null", "none", "nan", "?", "-", "."}
+
+
+def _data_quality_issues(header: list[str], data_rows: list[list[str]]) -> list[str]:
+    """Profile a parsed CSV and return a list of data-quality issue strings."""
+    n = len(data_rows)
+    if n == 0:
+        return ["no data rows"]
+    ncol = len(header)
+    issues: list[str] = []
+
+    ragged = sum(1 for r in data_rows if len(r) != ncol)
+    if ragged:
+        issues.append(f"ragged rows: {ragged} row(s) don't have {ncol} fields")
+
+    seen: set = set()
+    dup = 0
+    for r in data_rows:
+        key = tuple(r)
+        if key in seen:
+            dup += 1
+        else:
+            seen.add(key)
+    if dup:
+        issues.append(f"duplicate rows: {dup}")
+
+    for ci, col in enumerate(header):
+        vals = [r[ci] for r in data_rows if ci < len(r)]
+        present = [v for v in vals if v.strip().lower() not in _NA_TOKENS]
+        missing = n - len(present)
+        if missing:
+            pct = missing / n * 100
+            issues.append(f"missing: {col} {missing} ({pct:.0f}%)" + (" [high]" if pct >= 30 else ""))
+        if not present:
+            issues.append(f"empty column: {col} (all blank/NA)")
+            continue
+        uniq = set(present)
+        if len(uniq) == 1:
+            issues.append(f"constant column: {col} = '{next(iter(uniq))}'")
+        nums: list[float] = []
+        bad: list[str] = []
+        for v in present:
+            try:
+                nums.append(float(v))
+            except ValueError:
+                bad.append(v)
+        mostly_numeric = nums and len(nums) / len(present) >= 0.8
+        if mostly_numeric and bad:
+            ex = ", ".join(sorted(set(bad))[:3])
+            issues.append(f"mixed-type: {col} has {len(bad)} non-numeric value(s) (e.g. {ex})")
+        if mostly_numeric and len(nums) >= 8:
+            qs = statistics.quantiles(nums, n=4)
+            q1, q3 = qs[0], qs[-1]
+            iqr = q3 - q1
+            if iqr > 0:
+                lo, hi = q1 - 3 * iqr, q3 + 3 * iqr
+                outs = [v for v in nums if v < lo or v > hi]
+                if outs:
+                    ex = ", ".join(f"{v:.4g}" for v in sorted(outs)[:3])
+                    issues.append(f"outliers: {col} has {len(outs)} extreme value(s) (e.g. {ex})")
+        if len(uniq) == len(present) == n and n > 1 and not mostly_numeric:
+            issues.append(f"possible ID column: {col} (all {n} values unique)")
+    return issues
+
+
+def check_data(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Data-quality check on a CSV: missing values, duplicates, type
+    inconsistencies, outliers, constant/empty/ID columns. SAFE (read-only).
+
+    {"path": str}
+    """
+    path = str(args.get("path", "")).strip()
+    if not path:
+        return "error: 'path' is required"
+    p = Path(path)
+    if not p.exists():
+        return f"file not found: {path}"
+    try:
+        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
+            rows = list(csv.reader(f))
+    except OSError as e:
+        return f"read error: {e}"
+    if len(rows) < 2:
+        return "empty or header-only CSV"
+    header, data_rows = rows[0], rows[1:]
+    issues = _data_quality_issues(header, data_rows)
+    head = f"{p.name}: {len(data_rows)} rows × {len(header)} cols"
+    if not issues:
+        return f"{head}\nNo data-quality issues found."
+    return f"{head}\nData-quality issues ({len(issues)}):\n- " + "\n- ".join(issues)
+
+
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
@@ -909,6 +1001,13 @@ TOOLS = [
         required=("path",),
         optional=("task", "plot"),
         description="Analyze a CSV: per-column stats, correlations, optional histogram (plot=path).",
+    ),
+    Tool(
+        name="check_data",
+        tag="SAFE",
+        fn=check_data,
+        required=("path",),
+        description="Data-quality check on a CSV: missing, duplicates, type issues, outliers, ID/constant cols.",
     ),
     Tool(
         name="analyze_image",
