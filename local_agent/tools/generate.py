@@ -320,6 +320,67 @@ def report_csv(args: dict[str, Any], ctx: ToolContext) -> str:
     )
 
 
+def diagram(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Render a diagram from text to an image file — the on-device 'image
+    generation' that works. GUARDED (writes a file).
+
+    {"engine": "graphviz"|"mermaid", "spec": str, "out_path": str}
+      - graphviz: `spec` is DOT source; needs `dot` (pkg install graphviz).
+      - mermaid: `spec` is Mermaid source; needs `mmdc` (npm i -g @mermaid-js/mermaid-cli; heavy).
+    Output format is taken from out_path's extension (svg/png).
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    engine = str(args.get("engine", "graphviz")).strip().lower()
+    spec = str(args.get("spec", args.get("dot", ""))).strip()
+    out_path = str(args.get("out_path", "diagram.svg")).strip()
+    if not spec:
+        return "error: 'spec' (diagram source) is required"
+    op = Path(out_path).expanduser()
+    op.parent.mkdir(parents=True, exist_ok=True)
+    fmt = op.suffix.lstrip(".") or "svg"
+
+    if engine in ("graphviz", "dot"):
+        exe = shutil.which("dot")
+        if not exe:
+            return "graphviz not installed: `pkg install graphviz` (lightweight, on-device)."
+        try:
+            proc = subprocess.run(
+                [exe, f"-T{fmt}", "-o", str(op)], input=spec,
+                capture_output=True, text=True, timeout=60,
+            )
+        except Exception as e:  # noqa: BLE001
+            return f"graphviz error: {e}"
+        if proc.returncode != 0:
+            return f"graphviz error: {(proc.stderr or '').strip()[:300]}"
+        return f"wrote diagram: {op}"
+
+    if engine == "mermaid":
+        exe = shutil.which("mmdc")
+        if not exe:
+            return (
+                "mermaid-cli not installed: `npm i -g @mermaid-js/mermaid-cli` "
+                "(heavy — needs node + chromium; consider graphviz instead)."
+            )
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "in.mmd"
+            src.write_text(spec, encoding="utf-8")
+            try:
+                proc = subprocess.run(
+                    [exe, "-i", str(src), "-o", str(op)],
+                    capture_output=True, text=True, timeout=120,
+                )
+            except Exception as e:  # noqa: BLE001
+                return f"mermaid error: {e}"
+        if proc.returncode != 0:
+            return f"mermaid error: {(proc.stderr or '').strip()[:300]}"
+        return f"wrote diagram: {op}"
+
+    return f"unknown engine '{engine}' (use graphviz or mermaid)"
+
+
 def rephrase(args: dict[str, Any], ctx: ToolContext) -> str:
     text = str(args.get("text", "")).strip()
     style = str(args.get("style", "clear and concise")).strip()
@@ -360,6 +421,14 @@ TOOLS = [
         required=("csv", "out_path"),
         optional=("title", "columns", "max_charts"),
         description="One-shot CSV → HTML report: stats table, correlations, distribution charts.",
+    ),
+    Tool(
+        name="diagram",
+        tag="GUARDED",
+        fn=diagram,
+        required=("spec", "out_path"),
+        optional=("engine",),
+        description="Render a diagram from text (Graphviz DOT / Mermaid) to an image file.",
     ),
     Tool(
         name="rephrase",

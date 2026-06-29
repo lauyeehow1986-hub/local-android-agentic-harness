@@ -221,6 +221,156 @@ def check_data(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"{head}\nData-quality issues ({len(issues)}):\n- " + "\n- ".join(issues)
 
 
+_NA_NORMALIZE = {"na", "n/a", "null", "none", "nan"}
+
+
+def _clean_colname(name: str) -> str:
+    import re
+
+    c = re.sub(r"\W", "_", name.strip()) or "col"
+    if c[0].isdigit():
+        c = "_" + c
+    return c
+
+
+def query_csv(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Run a SQL SELECT over a CSV via in-memory SQLite. The table is named
+    `data`; column names are sanitized (non-alphanumerics → '_'). SAFE: read-only,
+    SELECT/WITH only.
+
+    {"path": str, "sql": str, "limit": int}
+    """
+    import sqlite3
+
+    path = str(args.get("path", "")).strip()
+    sql = str(args.get("sql", "")).strip()
+    limit = int(args.get("limit", 100) or 100)
+    if not path or not sql:
+        return "error: 'path' and 'sql' are required"
+    p = Path(path)
+    if not p.exists():
+        return f"file not found: {path}"
+    try:
+        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
+            rows = list(csv.reader(f))
+    except OSError as e:
+        return f"read error: {e}"
+    if len(rows) < 1:
+        return "empty CSV"
+    header, data_rows = rows[0], rows[1:]
+    cols = [_clean_colname(h) for h in header]
+    numeric = set(_numeric_columns(header, data_rows).keys())
+
+    q = sql.rstrip().rstrip(";")
+    low = q.lower()
+    if not (low.startswith("select") or low.startswith("with")):
+        return "only SELECT/WITH queries are allowed"
+    if ";" in q or any(k in low for k in ("attach", "pragma", "vacuum")):
+        return "unsupported: single SELECT/WITH only (no ';', attach, pragma)"
+
+    conn = sqlite3.connect(":memory:")
+    defs = ", ".join(
+        f'"{c}" {"REAL" if orig in numeric else "TEXT"}' for orig, c in zip(header, cols)
+    )
+    conn.execute(f"CREATE TABLE data ({defs})")
+    ph = ",".join("?" * len(cols))
+    for r in data_rows:
+        vals = []
+        for i, orig in enumerate(header):
+            v = r[i] if i < len(r) else ""
+            if v == "":
+                vals.append(None)
+            elif orig in numeric:
+                try:
+                    vals.append(float(v))
+                except ValueError:
+                    vals.append(None)
+            else:
+                vals.append(v)
+        conn.execute(f"INSERT INTO data VALUES ({ph})", vals)
+    try:
+        cur = conn.execute(q)
+        out_rows = cur.fetchmany(limit + 1)
+        names = [d[0] for d in cur.description]
+    except sqlite3.Error as e:
+        return f"SQL error: {e}\n(table is 'data'; columns: {', '.join(cols)})"
+
+    def fmt(v):
+        if v is None:
+            return ""
+        if isinstance(v, float):
+            return f"{v:.6g}"
+        return str(v)
+
+    lines = [" | ".join(names)]
+    for r in out_rows[:limit]:
+        lines.append(" | ".join(fmt(v) for v in r))
+    extra = f"\n(+more rows; limit {limit})" if len(out_rows) > limit else ""
+    return "\n".join(lines) + extra
+
+
+def clean_data(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Write a cleaned copy of a CSV: drop exact duplicate rows, trim whitespace,
+    normalize NA tokens to empty. GUARDED (writes a file).
+
+    {"path": str, "out_path": str, "drop_duplicates": bool, "trim": bool, "na_normalize": bool}
+    """
+    path = str(args.get("path", "")).strip()
+    out_path = str(args.get("out_path", "")).strip()
+    drop_dup = bool(args.get("drop_duplicates", True))
+    trim = bool(args.get("trim", True))
+    na_norm = bool(args.get("na_normalize", True))
+    if not path or not out_path:
+        return "error: 'path' and 'out_path' are required"
+    p = Path(path)
+    if not p.exists():
+        return f"file not found: {path}"
+    try:
+        with p.open(newline="", encoding="utf-8", errors="ignore") as f:
+            rows = list(csv.reader(f))
+    except OSError as e:
+        return f"read error: {e}"
+    if not rows:
+        return "empty CSV"
+    header, data_rows = rows[0], rows[1:]
+
+    cleaned: list[list[str]] = []
+    seen: set = set()
+    removed_dup = 0
+    trimmed = 0
+    normalized = 0
+    for r in data_rows:
+        nr = []
+        for v in r:
+            v2 = v.strip() if trim else v
+            if trim and v2 != v:
+                trimmed += 1
+            if na_norm and v2.strip().lower() in _NA_NORMALIZE:
+                v2 = ""
+                normalized += 1
+            nr.append(v2)
+        key = tuple(nr)
+        if drop_dup and key in seen:
+            removed_dup += 1
+            continue
+        seen.add(key)
+        cleaned.append(nr)
+
+    op = Path(out_path).expanduser()
+    op.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with op.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows(cleaned)
+    except OSError as e:
+        return f"write error: {e}"
+    return (
+        f"cleaned → {op} ({len(cleaned)} rows; removed {removed_dup} duplicate(s), "
+        f"trimmed {trimmed} cell(s), normalized {normalized} NA value(s))"
+    )
+
+
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
@@ -1008,6 +1158,22 @@ TOOLS = [
         fn=check_data,
         required=("path",),
         description="Data-quality check on a CSV: missing, duplicates, type issues, outliers, ID/constant cols.",
+    ),
+    Tool(
+        name="query_csv",
+        tag="SAFE",
+        fn=query_csv,
+        required=("path", "sql"),
+        optional=("limit",),
+        description="Run a SQL SELECT over a CSV (in-memory SQLite; table is 'data', columns sanitized).",
+    ),
+    Tool(
+        name="clean_data",
+        tag="GUARDED",
+        fn=clean_data,
+        required=("path", "out_path"),
+        optional=("drop_duplicates", "trim", "na_normalize"),
+        description="Write a cleaned CSV: drop duplicates, trim whitespace, normalize NA tokens.",
     ),
     Tool(
         name="analyze_image",

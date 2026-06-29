@@ -26,6 +26,8 @@ CONTRACT_TOOLS = {
     "research",
     "analyze_data",
     "check_data",
+    "query_csv",
+    "clean_data",
     "analyze_image",
     "analyze_pdf",
     "transcribe",
@@ -33,6 +35,7 @@ CONTRACT_TOOLS = {
     "make_slides",
     "make_html_report",
     "report_csv",
+    "diagram",
     "rephrase",
     "shell",
     "git_sync",
@@ -77,6 +80,8 @@ def test_guarded_set(reg):
         "make_slides",
         "make_html_report",
         "report_csv",
+        "diagram",
+        "clean_data",
         "shell",
         "git_sync",
         "open_app",
@@ -676,6 +681,52 @@ def test_check_data_finds_issues(reg, ctx, tmp_path):
     assert "outliers: age" in out
     assert "constant column: country" in out
     assert "duplicate rows" in out
+
+
+def test_query_csv_select(reg, ctx, tmp_path):
+    csv_path = tmp_path / "d.csv"
+    csv_path.write_text("age,group\n40,A\n50,A\n60,B\n")
+    out = reg["query_csv"].fn(
+        {"path": str(csv_path), "sql": "select \"group\", count(*) c, avg(age) a from data group by \"group\" order by \"group\""},
+        ctx,
+    )
+    assert "A | 2 | 45" in out
+    assert "B | 1 | 60" in out
+
+
+def test_query_csv_rejects_non_select(reg, ctx, tmp_path):
+    csv_path = tmp_path / "d.csv"
+    csv_path.write_text("a\n1\n")
+    out = reg["query_csv"].fn({"path": str(csv_path), "sql": "drop table data"}, ctx)
+    assert "only SELECT" in out
+
+
+def test_query_csv_sanitizes_columns(reg, ctx, tmp_path):
+    csv_path = tmp_path / "d.csv"
+    csv_path.write_text("first name,age\nAlice,40\n")
+    out = reg["query_csv"].fn({"path": str(csv_path), "sql": "select first_name from data"}, ctx)
+    assert "Alice" in out
+
+
+def test_clean_data_dedup_and_trim(reg, ctx, tmp_path):
+    src = tmp_path / "dirty.csv"
+    src.write_text("a,b\n 1 , x \n1,x\n2,NA\n")
+    out_path = tmp_path / "clean.csv"
+    out = reg["clean_data"].fn({"path": str(src), "out_path": str(out_path)}, ctx)
+    assert "removed 1 duplicate" in out
+    text = out_path.read_text()
+    assert "1,x" in text          # trimmed
+    assert "2," in text           # NA normalized to empty
+
+
+def test_diagram_graphviz_missing(reg, ctx, tmp_path, monkeypatch):
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    out = reg["diagram"].fn(
+        {"engine": "graphviz", "spec": "digraph{a->b}", "out_path": str(tmp_path / "d.svg")}, ctx
+    )
+    assert "graphviz not installed" in out
 
 
 def test_check_data_clean(reg, ctx, tmp_path):

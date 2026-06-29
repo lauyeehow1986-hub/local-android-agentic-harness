@@ -27,6 +27,8 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - browser [G] {"steps": [...]}
 - analyze_data [S] {"path": str, "task": str, "plot": str}
 - check_data [S] {"path": str}  (CSV data-quality: missing/duplicates/type issues/outliers/ID cols)
+- query_csv [S] {"path": str, "sql": str, "limit": int}  (SQL SELECT over a CSV; table 'data', cols sanitized)
+- clean_data [G] {"path": str, "out_path": str}  (write de-duped/trimmed/NA-normalized CSV)
 - analyze_image [S] {"path": str, "question": str, "ocr": bool}  (printed text→Tesseract OCR then answer; or describe via vision model)
 - analyze_pdf [S] {"path": str, "task": str}
 - transcribe [S] {"path": str, "task": str, "language": str, "diarize": bool, "translate": bool}  (audio→text; translate=true → English from any language)
@@ -34,6 +36,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - make_slides [G] {"title": str, "outline": [str], "out_path": str}
 - make_html_report [G] {"title": str, "out_path": str, "sections": [{"heading": str, "body": str, "table": [[...]], "chart": {"type":"bar"|"line","labels":[...],"values":[...]}}]}  (sections must be OBJECTS with content; chart→inline SVG; use {"chart":{"csv":path,"y":col,"x":col}} for real data; analyze_data first; never claim a chart you didn't add)
 - report_csv [G] {"csv": str, "out_path": str, "title": str}  (one-shot dataset→HTML: stats+correlations+histograms; prefer for "report/visualize this CSV")
+- diagram [G] {"engine": "graphviz"|"mermaid", "spec": str, "out_path": str}  (text→diagram image; on-device flowcharts/ER)
 - rephrase [S] {"text": str, "style": str}
 - maps [S] {"query": str} OR {"origin": str, "destination": str}  (place search / driving directions, returns Maps link)
 - open_app [G] {"target": str}  (open a URL/deeplink on the phone, e.g. Grab app or Maps nav; cannot order/pay)

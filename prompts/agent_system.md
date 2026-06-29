@@ -103,6 +103,8 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Data & files
 - `analyze_data` [SAFE] — run analysis on a CSV/dataset (stats, correlations, optional plot). `{"path": str, "task": str, "plot": str}`
 - `check_data` [SAFE] — data-quality check on a CSV: missing values, duplicate rows, type inconsistencies, outliers, constant/empty/ID columns. `{"path": str}`
+- `query_csv` [SAFE] — run a SQL SELECT over a CSV (in-memory SQLite). The table is `data`; column names are sanitized (spaces/symbols → `_`). SELECT/WITH only. `{"path": str, "sql": str, "limit": int}`
+- `clean_data` [GUARDED] — write a cleaned copy of a CSV (drop duplicate rows, trim whitespace, normalize NA). `{"path": str, "out_path": str, "drop_duplicates": bool, "trim": bool, "na_normalize": bool}`
 - `analyze_image` [SAFE] — read/analyze an image. For printed text (receipts, labels, documents) it uses the **Tesseract OCR engine** (accurate — a small VLM invents digits), then answers your question over the OCR text. Pure description/VQA uses an on-demand vision model. `{"path": str, "question": str, "ocr": bool}` (question & ocr optional)
 - `analyze_pdf` [SAFE] — extract text from a PDF and summarize/answer a task over it. `{"path": str, "task": str}`
 - `transcribe` [SAFE] — speech-to-text for meeting audio; optionally summarize / extract action items. `{"path": str, "task": str, "language": str, "diarize": bool, "translate": bool}` (translate=true outputs English from any language; all but path optional)
@@ -111,6 +113,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Generation
 - `make_slides` [GUARDED] — build a slide deck (writes a file). `{"title": str, "outline": [str], "out_path": str}`
 - `make_html_report` [GUARDED] — build an HTML report (writes a file). Each section is an OBJECT with real content (a bare string makes an empty section). Charts render as inline SVG. `{"title": str, "out_path": str, "sections": [{"heading": str, "body": str, "table": [[...]], "chart": {"type":"bar"|"line","labels":[...],"values":[...],"title":str}}]}`. To chart REAL data, use `"chart": {"type":"bar","csv":"/path.csv","y":"colname","x":"colname","title":str}` instead of typing numbers. Get trends/numbers from `analyze_data` first; don't claim a chart you didn't add.
+- `diagram` [GUARDED] — render a diagram from text to an image file (Graphviz DOT, or Mermaid). The on-device way to "generate an image" (flowcharts/ER/org charts). `{"engine": "graphviz"|"mermaid", "spec": str, "out_path": str}`
 - `report_csv` [GUARDED] — one-shot CSV → HTML report (summary stats table, correlations, a histogram chart per numeric column). Prefer this for "report/visualize this dataset". `{"csv": str, "out_path": str, "title": str, "columns": [str], "max_charts": int}` (only csv & out_path required)
 - `rephrase` [SAFE] — rewrite text (email/sentence). `{"text": str, "style": str}`
 

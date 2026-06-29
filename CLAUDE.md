@@ -143,7 +143,7 @@ long observations destroy latency by bloating the next prefill.
 
 Tool list (must match `agent_system.md`):
 `vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`(G) · `web_search` `web_scrape` `browser`(G) `research` ·
-`analyze_data` `check_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` · `make_slides`(G) `make_html_report`(G) `report_csv`(G) `rephrase` ·
+`analyze_data` `check_data` `query_csv` `clean_data`(G) `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` · `make_slides`(G) `make_html_report`(G) `report_csv`(G) `diagram`(G) `rephrase` ·
 `maps` `open_app`(G) `clipboard` `notify` `location` `speak` · `latest_file` `shell`(G) `git_sync`(G) `request_approval`.
 
 Implementation notes:

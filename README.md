@@ -286,8 +286,8 @@ your hands by design.
 
 `vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`*(G)* ·
 `web_search` `web_scrape` `browser`*(G)* `research` ·
-`analyze_data` `check_data` `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
-`make_slides`*(G)* `make_html_report`*(G)* `report_csv`*(G)* `rephrase` ·
+`analyze_data` `check_data` `query_csv` `clean_data`*(G)* `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
+`make_slides`*(G)* `make_html_report`*(G)* `report_csv`*(G)* `diagram`*(G)* `rephrase` ·
 `maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
 `latest_file` `shell`*(G)* `git_sync`*(G)* `request_approval`
 
@@ -378,6 +378,8 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | `analyze_image` | **path**, question, ocr | OCR text (Tesseract — accurate on receipts) or describe a scene (vision model). *"what's the total on the receipt at …"* · `pkg install tesseract`; `ollama pull moondream` |
 | `analyze_data` | **path**, task, plot | CSV stats + correlations, optional histogram. *"analyze cohort.csv, plot to age.png"* · `pip install matplotlib` for plots |
 | `check_data` | **path** | Data-quality check: missing values, duplicates, type inconsistencies, outliers, constant/empty/ID columns. *"check cohort.csv for data quality issues"* |
+| `query_csv` | **path**, **sql**, limit | Run SQL `SELECT` over a CSV (in-memory SQLite; table `data`, columns sanitized). *"on cohort.csv, count patients by age group"* |
+| `clean_data` *(G)* | **path**, **out_path**, drop_duplicates, trim, na_normalize | Write a cleaned CSV (de-dupe, trim, normalize NA). *"clean cohort.csv to cohort_clean.csv"* |
 | `report_csv` *(G)* | **csv**, **out_path**, title, columns, max_charts | **One-shot CSV → full HTML report** (stats + correlations + charts). *"build a report of cohort.csv with charts"* |
 
 ### Speech (needs whisper.cpp — on-phone Setup Step 4)
@@ -392,6 +394,7 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | `make_slides` *(G)* | **title**, **outline**, **out_path** | Markdown (Marp) slide deck. *"make slides on X to deck.md"* |
 | `make_html_report` *(G)* | **title**, **sections**, **out_path** | HTML report; sections can carry text, tables, and inline-SVG charts. |
 | `report_csv` *(G)* | (see above) | The easy path for data reports. |
+| `diagram` *(G)* | **spec**, **out_path**, engine | Text → diagram image (Graphviz DOT or Mermaid). On-device "image generation" for flowcharts/ER/org charts. *"draw an ER diagram of these tables"* · `pkg install graphviz` |
 | `rephrase` | **text**, style | Rewrite text. *"rephrase what I copied to be polite"* |
 
 ### Maps & device (`pkg install termux-api`, except `maps`)
