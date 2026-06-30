@@ -172,6 +172,42 @@ def test_latest_file_missing_folder(tmp_path):
     assert "folder not found" in out
 
 
+def test_voice_dictation_appends_to_note(tmp_path):
+    from local_agent import voice
+    from local_agent.loop import Agent
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    cfg.log_path = tmp_path / "agent.log"
+    cfg.system_prompt_path = (
+        Path(__file__).resolve().parent.parent / "prompts" / "agent_system.md"
+    )
+
+    class _C:
+        def generate(self, *a, **k):
+            return ""
+
+        def health(self):
+            return True
+
+    agent = Agent(config=cfg, client=_C())
+    res = voice._append_dictation(agent, "remember to email the lab", "Notes/voice.md")
+    assert "voice.md" in res                  # created on first dictation, appended after
+    saved = (cfg.vault_path / "Notes" / "voice.md").read_text()
+    assert "remember to email the lab" in saved
+    assert saved.strip().startswith("- [")   # timestamped bullet
+
+
+def test_voice_dictation_default_note_is_today():
+    from local_agent import voice
+    import datetime
+
+    note = voice._dictation_note("")
+    assert note == f"Daily/{datetime.date.today().isoformat()}.md"
+    assert voice._dictation_note("X/y.md") == "X/y.md"
+
+
 def test_voice_spoken_form_summarizes_long(tmp_path):
     from local_agent import voice
     from local_agent.loop import Agent

@@ -477,6 +477,15 @@ python -m local_agent.voice                   # 3. start it
 transcribes, answers, and speaks) → `Ctrl-C` = quit. `--max-seconds N` caps a
 recording. Guarded actions are auto-denied in voice mode.
 
+**Two modes:**
+- *Command* (default) — your speech is a task for the agent (it acts + answers + speaks).
+- *Dictation* (`--dictate`) — your speech is **appended verbatim (timestamped) to a note**,
+  no agent in the loop — fast, reliable voice memos:
+  ```bash
+  python -m local_agent.voice --dictate                 # → today's Daily/<date>.md
+  python -m local_agent.voice --dictate --note "Notes/ideas.md"
+  ```
+
 By default it **speaks a 1–2 sentence summary** (the full answer still prints) so TTS
 doesn't read a wall of text; use `--full-speech` to speak everything.
 

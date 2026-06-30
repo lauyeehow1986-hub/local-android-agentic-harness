@@ -2,11 +2,16 @@
 
   record (termux-microphone-record) → transcribe (whisper) → agent → speak (TTS)
 
-    python -m local_agent.voice                 # press Enter to start/stop each turn
-    python -m local_agent.voice --max-seconds 180
+    python -m local_agent.voice                 # command mode: speech → agent → answer
+    python -m local_agent.voice --dictate       # dictation: speech → appended to today's note
+    python -m local_agent.voice --dictate --note "Notes/ideas.md"
 
 Needs termux-api (`pkg install termux-api`) and a whisper backend (see
 docs/TERMUX_SETUP.md).
+
+Two modes:
+  - default       → the transcript is a task for the agent (it acts + answers + speaks).
+  - --dictate     → the transcript is appended VERBATIM (timestamped) to a note, no agent.
 
 Controls:
   - Enter  → START recording
@@ -103,6 +108,27 @@ def _spoken_form(agent, text: str, *, full: bool, max_len: int = 240) -> str:
         return text[:max_len]
 
 
+def _dictation_note(note: str) -> str:
+    """Resolve the target note for dictation — default today's daily note."""
+    if note:
+        return note
+    import datetime
+
+    return f"Daily/{datetime.date.today().isoformat()}.md"
+
+
+def _append_dictation(agent, text: str, note: str) -> str:
+    """Append a transcribed line (with a timestamp) to a vault note, verbatim.
+    Returns the tool's result string. Uses vault_write append — no LLM in the loop."""
+    import datetime
+
+    stamp = datetime.datetime.now().strftime("%H:%M")
+    content = f"- [{stamp}] {text}\n"
+    return agent.registry["vault_write"].fn(
+        {"path": note, "content": content, "mode": "append"}, agent.ctx
+    )
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
 
@@ -111,6 +137,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument(
         "--full-speech", action="store_true",
         help="speak the entire answer (default: speak a 1-2 sentence summary)",
+    )
+    ap.add_argument(
+        "--dictate", action="store_true",
+        help="dictation mode: append the transcript verbatim to a note (no agent)",
+    )
+    ap.add_argument(
+        "--note", default="",
+        help="dictation target note (default: today's Daily/<date>.md)",
     )
     args = ap.parse_args(argv)
 
@@ -121,7 +155,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     config = load_config()
     config.stream = False
     agent = build_agent(config)
-    print("Voice loop ready. Enter = start recording, Enter again = stop, Ctrl-C = quit.")
+    note = _dictation_note(args.note)
+    if args.dictate:
+        print(f"Dictation mode → {note}. Enter = start, Enter = stop, Ctrl-C = quit.")
+    else:
+        print("Voice loop ready. Enter = start recording, Enter again = stop, Ctrl-C = quit.")
 
     while True:
         try:
@@ -148,6 +186,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             _speak("Sorry, I didn't catch that.")
             continue
         print(f"you: {text}")
+
+        if args.dictate:
+            # Verbatim → note, no agent reasoning. Fast and reliable.
+            result = _append_dictation(agent, text, note)
+            print(result)
+            _speak("Saved.")
+            continue
+
         fe = VoiceFrontend()
         answer = agent.run_task(text, fe)
         print(f"agent: {answer}")
