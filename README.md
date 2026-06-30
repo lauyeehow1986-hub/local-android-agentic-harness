@@ -480,7 +480,8 @@ recording. Guarded actions are auto-denied in voice mode.
 **Two modes:**
 - *Command* (default) — your speech is a task for the agent (it acts + answers + speaks).
 - *Dictation* (`--dictate`) — your speech is **appended verbatim (timestamped) to a note**,
-  no agent in the loop — fast, reliable voice memos:
+  no agent in the loop — fast, reliable voice memos. It **reads the transcript back** so you
+  can catch mis-hears (`Enter` = save · `r` = redo · `n` = discard); `--no-confirm` to skip.
   ```bash
   python -m local_agent.voice --dictate                 # → today's Daily/<date>.md
   python -m local_agent.voice --dictate --note "Notes/ideas.md"

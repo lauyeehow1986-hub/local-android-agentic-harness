@@ -12,6 +12,8 @@ docs/TERMUX_SETUP.md).
 Two modes:
   - default       → the transcript is a task for the agent (it acts + answers + speaks).
   - --dictate     → the transcript is appended VERBATIM (timestamped) to a note, no agent.
+                    It reads the transcript back first (Enter = save / r = redo /
+                    n = discard); use --no-confirm to save immediately.
 
 Controls:
   - Enter  → START recording
@@ -146,6 +148,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--note", default="",
         help="dictation target note (default: today's Daily/<date>.md)",
     )
+    ap.add_argument(
+        "--no-confirm", action="store_true",
+        help="dictation: save immediately without reading the transcript back",
+    )
     args = ap.parse_args(argv)
 
     from .config import load_config
@@ -188,6 +194,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"you: {text}")
 
         if args.dictate:
+            # Read the transcript back so mis-hears can be caught before saving.
+            if not args.no_confirm:
+                _speak(f"I heard: {text[:400]}")
+                try:
+                    resp = input("[Enter = save · r = redo · n = discard] ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    resp = "n"
+                if resp == "r":
+                    print("(redo)")
+                    continue
+                if resp == "n":
+                    print("(discarded)")
+                    continue
             # Verbatim → note, no agent reasoning. Fast and reliable.
             result = _append_dictation(agent, text, note)
             print(result)
