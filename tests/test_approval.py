@@ -88,6 +88,42 @@ def test_unknown_autonomy_defaults_to_hitl():
     assert d.needs_prompt is True
 
 
+def test_browser_checkout_always_confirms():
+    # A "place order" / pay / checkout click commits money → confirm even in full.
+    steps = [
+        {"action": "navigate", "url": "https://food.example/cart"},
+        {"action": "click", "selector": "button", "label": "Place Order"},
+    ]
+    d = approval.decide(
+        autonomy="full", tool_name="browser", tool_tag="GUARDED", args={"steps": steps}
+    )
+    assert d.needs_prompt is True
+
+
+def test_browser_checkout_url_confirms():
+    steps = [{"action": "navigate", "url": "https://x.com/checkout"}]
+    assert approval.web_steps_need_confirm(steps) is True
+
+
+def test_browser_cash_on_delivery_not_blocked():
+    # Selecting COD and browsing are fine — no payment commit yet.
+    steps = [
+        {"action": "navigate", "url": "https://food.example/restaurant"},
+        {"action": "click", "selector": "#add-to-cart"},
+        {"action": "click", "selector": "label", "text": "Cash on delivery"},
+        {"action": "read", "selector": ".cart-total"},
+    ]
+    d = approval.decide(
+        autonomy="full", tool_name="browser", tool_tag="GUARDED", args={"steps": steps}
+    )
+    assert d.needs_prompt is False
+
+
+def test_browser_read_only_steps_run_in_full():
+    steps = [{"action": "read"}, {"action": "navigate", "url": "https://x.com/menu"}]
+    assert approval.web_steps_need_confirm(steps) is False
+
+
 def test_parse_approval_yes():
     assert approval.parse_approval_response("y") == ("approved", None)
     assert approval.parse_approval_response("YES") == ("approved", None)

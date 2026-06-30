@@ -19,6 +19,38 @@ _ALWAYS_CONFIRM_SHELL = [
     re.compile(r">"),  # any output redirect that can overwrite
 ]
 
+# Web-automation steps that COMMIT an order/payment — always confirm, even in
+# `full`. Selecting cash-on-delivery is NOT here (it's just a radio choice); the
+# final "place order"/pay click IS. Matched against a step's selector/label/text/url.
+_CHECKOUT_PATTERNS = [
+    re.compile(r"place\s*order", re.I),
+    re.compile(r"confirm\s*order", re.I),
+    re.compile(r"complete\s*order", re.I),
+    re.compile(r"\bpay\b|payment", re.I),
+    re.compile(r"check\s*out|checkout", re.I),
+    re.compile(r"buy\s*now|purchase", re.I),
+    re.compile(r"/(checkout|payment|pay|order/confirm)", re.I),
+]
+
+
+def web_steps_need_confirm(steps: Any) -> bool:
+    """True if any browser step looks like it commits an order/payment."""
+    if not isinstance(steps, list):
+        return False
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        # Only click/submit/navigate steps can commit; reads are harmless.
+        action = str(step.get("action", "")).lower()
+        if action not in ("click", "submit", "navigate", "press", "tap"):
+            continue
+        blob = " ".join(
+            str(step.get(k, "")) for k in ("selector", "label", "text", "url", "name")
+        )
+        if any(p.search(blob) for p in _CHECKOUT_PATTERNS):
+            return True
+    return False
+
 
 @dataclass
 class ApprovalDecision:
@@ -46,6 +78,8 @@ def is_always_confirm(tool_name: str, tool_tag: str, args: dict[str, Any]) -> bo
         return shell_needs_confirm(str(args.get("cmd", "")))
     if tool_name == "vault_write":
         return str(args.get("mode", "")).lower() == "overwrite"
+    if tool_name == "browser":
+        return web_steps_need_confirm(args.get("steps"))
     if tool_name in ("send_telegram", "send_email"):  # future adapters
         return True
     return False

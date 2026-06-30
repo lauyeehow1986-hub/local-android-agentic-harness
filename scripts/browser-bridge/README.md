@@ -41,6 +41,31 @@ yh> scrape https://a-js-heavy-site.com with rendering and summarize the main poi
 The agent calls `web_scrape` with `render=true`, which POSTs to this bridge; the
 bridge drives headless Chromium and returns the rendered HTML.
 
+## Endpoints
+
+- `POST /content {"url":...}` → rendered HTML (used by `web_scrape render=true`).
+- `POST /actions {"steps":[...]}` → interactive automation (used by the `browser` tool).
+  Steps: `navigate` · `read` · `fill` · `click` · `select` · `wait` · `screenshot` · `content`.
+- `GET /health` → `ok`.
+
+## Persistent session (logging in)
+
+The bridge uses a **persistent Chromium profile** (`BROWSER_PROFILE_DIR`, default
+`~/.local_agent/chromium-profile`), so a login survives across calls and restarts.
+The agent can log in with steps (filling a username/password it's given — use a
+**throwaway account**, never your main credentials). Treat the profile dir like a
+password: anyone who can read it is logged in as that account. Delete it to log out:
+`rm -rf ~/.local_agent/chromium-profile`.
+
+## Ordering on a site (e.g. foodpanda) — how the guardrail works
+
+The agent can browse → search → add to cart → select **cash-on-delivery** if offered.
+The **harness** (not this bridge) forces a confirmation before any "place order / pay /
+checkout" step — see `local_agent/approval.py` (`web_steps_need_confirm`). So even in
+`AUTONOMY=full`, the final commit shows you the cart and asks y/n. If only card/online
+payment is available, the agent stops and hands back to you. Use a throwaway account
+with **no saved card** so the worst case is "wrong items in a cart."
+
 ## Caveats (read before relying on this)
 
 - **RAM.** Chromium + the resident 4B model on an 8 GB phone is tight — a heavy page

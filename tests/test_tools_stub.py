@@ -345,6 +345,39 @@ def test_extract_pdf_falls_back_to_pypdf(monkeypatch):
     assert text == "from pypdf" and n_pages == 1
 
 
+def test_browser_routes_to_bridge(reg, tmp_path, monkeypatch):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, web
+
+    cfg = Config()
+    cfg.browser_remote_url = "http://127.0.0.1:3000"
+    ctx2 = ToolContext(config=cfg, client=None)
+
+    captured = {}
+
+    def fake_bridge(base, steps, ctx):
+        captured["base"] = base
+        captured["steps"] = steps
+        return '{"results": [{"action": "read", "text": "menu"}]}'
+
+    monkeypatch.setattr(web, "_browser_via_bridge", fake_bridge)
+    out = reg["browser"].fn({"steps": [{"action": "read"}]}, ctx2)
+    assert "menu" in out
+    assert captured["base"] == "http://127.0.0.1:3000"
+
+
+def test_browser_not_configured(reg, tmp_path):
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext
+
+    cfg = Config()
+    cfg.browser_remote_url = ""
+    cfg.enable_browser = False
+    ctx2 = ToolContext(config=cfg, client=None)
+    out = reg["browser"].fn({"steps": [{"action": "read"}]}, ctx2)
+    assert "AGENT_BROWSER_REMOTE_URL" in out
+
+
 def test_web_scrape_render_without_remote(reg, ctx):
     out = reg["web_scrape"].fn({"url": "https://example.com", "render": True}, ctx)
     assert "AGENT_BROWSER_REMOTE_URL" in out

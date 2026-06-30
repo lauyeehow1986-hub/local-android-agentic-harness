@@ -24,7 +24,7 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - web_search [S] {"query": str}
 - web_scrape [S] {"url": str, "render": bool}  (render=true → JS pages via remote headless Chrome, optional)
 - research [S] {"query": str, "source": "arxiv"|"pubmed", "limit": int}  (academic papers)
-- browser [G] {"steps": [...]}
+- browser [G] {"steps": [{"action":"navigate"|"read"|"fill"|"click"|"select"|"wait"|"screenshot", ...}]}  (interactive web automation, persistent login; read before acting. Ordering: search→cart→pick cash-on-delivery if available else hand to user; final place-order/pay always needs approval; never claim an order placed unless approved)
 - analyze_data [S] {"path": str, "task": str, "plot": str}
 - check_data [S] {"path": str}  (CSV data-quality: missing/duplicates/type issues/outliers/ID cols)
 - query_csv [S] {"path": str, "sql": str, "limit": int}  (SQL SELECT over a CSV; table 'data', cols sanitized)

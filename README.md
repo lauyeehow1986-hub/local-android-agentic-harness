@@ -369,7 +369,7 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | `web_search` | **query** | DuckDuckGo instant answer. *"web search the OMOP CDM spec"* |
 | `web_scrape` | **url**, render | Fetch a page as text; `render=true` runs JS via a headless Chrome (set `AGENT_BROWSER_REMOTE_URL`; see *Optional backends → Browsing JS-heavy pages*). *"summarize https://… with rendering"* |
 | `research` | **query**, source, limit | arXiv / PubMed papers (titles, abstracts, links). *"find arXiv papers on recurrent-event survival"* |
-| `browser` *(G)* | **steps** | Full Playwright click/fill (desktop/LAN only; off by default). |
+| `browser` *(G)* | **steps** | Interactive web automation (navigate/read/fill/click/select/screenshot) via the browser bridge with a persistent login. *"on my throwaway foodpanda account, add chicken rice to the cart and pick cash on delivery"* — see **Web automation** below. |
 
 ### Documents, images, data
 | Tool | Args | What it does · example · setup |
@@ -512,6 +512,33 @@ yh> analyze /sdcard/Download/cohort.csv and save a histogram to /sdcard/Download
 ```
 `analyze_data` reports per-column quartiles/sd and pairwise correlations always; the
 plot needs matplotlib.
+
+## Web automation (browse, fill, order — with a payment guardrail)
+
+The `browser` tool drives a **persistent** Chromium session through the bridge
+(on-device or LAN), so it can navigate, read the page, fill forms, click, and select —
+across any web-order or form site, within a logged-in session.
+
+Setup: run `scripts/browser-bridge` and `export AGENT_BROWSER_REMOTE_URL=http://127.0.0.1:3000`
+(the bridge's README covers Termux + the persistent profile). Log in once with a
+**throwaway account** (the agent can fill the login form; never use your main credentials).
+
+```
+yh> on foodpanda, add 1 chicken rice to the cart, pick cash on delivery, and show me the total
+```
+
+**Payment guardrail (built in, not optional):**
+- The agent browses → adds to cart → selects **cash-on-delivery** if available.
+- The **final "place order / pay / checkout" step always requires your approval**, even in
+  `AUTONOMY=full` (it shows the cart + total for a one-tap y/n). The model can't silently
+  place an order.
+- If only **card/online payment** is offered, the agent **stops and hands back to you**.
+- Use a throwaway account with **no saved card**, so the worst case is "wrong items in a
+  cart." See `local_agent/approval.py` (`web_steps_need_confirm`) for the exact policy.
+
+> ⚠️ Browser automation is fragile (anti-bot/CAPTCHA can block it) and Chromium + the 4B
+> is tight on 8 GB. If it thrashes, point `AGENT_BROWSER_REMOTE_URL` at a **LAN box**
+> instead. This drives *your own* account on *your own* device.
 
 ## Hybrid routing (offload hard tasks to a LAN box)
 

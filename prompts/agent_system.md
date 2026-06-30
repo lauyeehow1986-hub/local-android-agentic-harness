@@ -97,7 +97,7 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 ### Web
 - `web_search` [SAFE] — search engine query. `{"query": str}`
 - `web_scrape` [SAFE] — fetch+extract a URL as text/markdown. `{"url": str, "render": bool}` (render=true renders JS pages via a remote headless Chrome; optional)
-- `browser` [GUARDED] — Playwright action (click/fill/navigate/screenshot). `{"steps": [ ... ]}`
+- `browser` [GUARDED] — interactive web automation via the browser bridge (persistent login session). `{"steps": [{"action": "navigate","url":...}, {"action":"read","selector":...}, {"action":"fill","selector":...,"text":...}, {"action":"click","selector":...}, {"action":"select","selector":...,"value":...}, {"action":"wait","selector"/"ms":...}, {"action":"screenshot","path":...}]}`. Use `read` to see the page before acting. For ordering on a site: search → add to cart → if a **cash-on-delivery** option exists, select it and proceed; if only card/online payment, STOP and tell the user to pay. The final "place order"/checkout/pay step ALWAYS requires approval (even in full mode) — never claim an order was placed unless the approval returned approved.
 - `research` [SAFE] — search academic papers (arXiv/PubMed); returns titles, abstracts, links. `{"query": str, "source": "arxiv"|"pubmed", "limit": int}`
 
 ### Data & files

@@ -128,13 +128,43 @@ def web_search(args: dict[str, Any], ctx: ToolContext) -> str:
     return "\n".join(lines)
 
 
+def _browser_via_bridge(base: str, steps: list, ctx: ToolContext) -> str:
+    """Drive interactive steps through the browser-bridge /actions endpoint
+    (Node + system Chromium, persistent session). Returns a short result."""
+    token = getattr(ctx.config, "browser_remote_token", "")
+    endpoint = f"{base.rstrip('/')}/actions" + (f"?token={token}" if token else "")
+    body = json.dumps({"steps": steps}).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except urllib.error.URLError as e:
+        return f"browser bridge unreachable: {e} (is the bridge running with /actions?)"
+    except Exception as e:  # noqa: BLE001
+        return f"browser error: {e}"
+    results = data.get("results", data)
+    text = json.dumps(results, ensure_ascii=False)
+    return text[:3000]
+
+
 def browser(args: dict[str, Any], ctx: ToolContext) -> str:
+    steps = args.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return "error: 'steps' must be a non-empty list of actions"
+
+    # Preferred path on the phone: drive the browser-bridge (Node + Chromium).
+    remote = getattr(ctx.config, "browser_remote_url", "")
+    if remote:
+        return _browser_via_bridge(remote, steps, ctx)
+
+    # Fallback: local Playwright (desktop/LAN where the harness itself runs).
     if not getattr(ctx.config, "enable_browser", False):
         return (
-            "browser disabled: Playwright won't install on Termux. For JS-rendered "
-            "pages use web_scrape with render=true (drives a remote headless Chrome via "
-            "AGENT_BROWSER_REMOTE_URL). For full click/fill automation, run the harness "
-            "on a desktop/LAN box with AGENT_ENABLE_BROWSER=1 and Playwright installed."
+            "browser not configured: set AGENT_BROWSER_REMOTE_URL to a browser-bridge "
+            "(on-device or LAN — see scripts/browser-bridge) for interactive automation, "
+            "or run on a desktop with AGENT_ENABLE_BROWSER=1 and Playwright installed."
         )
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
