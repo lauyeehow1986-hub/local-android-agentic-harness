@@ -546,9 +546,20 @@ yh> on foodpanda, add 1 chicken rice to the cart, pick cash on delivery, and sho
 - Use a throwaway account with **no saved card**, so the worst case is "wrong items in a
   cart." See `local_agent/approval.py` (`web_steps_need_confirm`) for the exact policy.
 
-> ⚠️ Browser automation is fragile (anti-bot/CAPTCHA can block it) and Chromium + the 4B
-> is tight on 8 GB. If it thrashes, point `AGENT_BROWSER_REMOTE_URL` at a **LAN box**
-> instead. This drives *your own* account on *your own* device.
+> ⚠️ **Run this on a LAN box, not the phone.** Web automation is the heaviest task type
+> (multi-step ReAct + Chromium), and running Chromium alongside the 4B on the phone causes
+> RAM thrashing — the model can time out before finishing a single step. Put **both** Ollama
+> and the bridge on a laptop/desktop and make the phone a thin client:
+> ```bash
+> # LAN box:  OLLAMA_HOST=0.0.0.0 ollama serve   +   node scripts/browser-bridge/server.js
+> # phone:
+> OLLAMA_REMOTE_URL=http://<lan-ip>:11434 AGENT_ROUTE=auto \
+>   AGENT_BROWSER_REMOTE_URL=http://<lan-ip>:3000 python -m local_agent.main
+> ```
+> On-device is only realistic for a step or two with `AGENT_NUM_CTX=2048`, the compact
+> prompt, `AGENT_REQUEST_TIMEOUT=1800`, and other apps closed — and even then it's slow.
+> Also fragile: anti-bot/CAPTCHA can block automation. This drives *your own* account on
+> *your own* device.
 
 ## Hybrid routing (offload hard tasks to a LAN box)
 
