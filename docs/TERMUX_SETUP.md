@@ -196,6 +196,20 @@ python -m local_agent.batch ~/jobs/weekly.txt            # guarded actions auto-
 python -m local_agent.batch --approve ~/jobs/weekly.txt  # allow writes/sends
 ```
 
+## 5d. Optional: screen automation & type-anywhere (ADB)
+
+```bash
+pkg install -y android-tools tesseract
+# Android Settings → Developer options → Wireless debugging → ON → Pair with code
+adb pair 127.0.0.1:<pairing-port>       # enter the 6-digit code
+adb connect 127.0.0.1:<connect-port>
+adb devices                              # must show 'device'
+```
+Then: `python -m local_agent.voice --type` (dictate into any app), or ask the agent to
+`screenshot` / `find_on_screen` / `tap`. Install the **Termux:Widget app (F-Droid)** and
+`cp scripts/termux-widgets/* ~/.shortcuts/` for a one-tap 🔴 killswitch + dictation buttons.
+Full walkthrough: the README's *Screen automation & type-anywhere* section.
+
 ## 6. Make it persistent (~/.bashrc)
 
 Add these so every new Termux session is configured (the whisper/browser lines

@@ -534,51 +534,65 @@ yh> analyze /sdcard/Download/cohort.csv and save a histogram to /sdcard/Download
 `analyze_data` reports per-column quartiles/sd and pairwise correlations always; the
 plot needs matplotlib.
 
-## Screen automation & type-anywhere (Wispr-style)
+## Screen automation & type-anywhere (Wispr-style) — step by step
 
 The agent can **see the screen and tap through any app**, and **type dictation into any
-focused field** — via ADB on the device.
+focused field** — via ADB on the device. Follow these steps in order.
 
-### One-time setup (grant ADB on the phone)
+#### Step 1 — install adb + OCR
 ```bash
 pkg install -y android-tools tesseract           # adb + on-screen OCR
-# Android Settings → Developer options → Wireless debugging → ON → "Pair device with code"
-adb pair 127.0.0.1:<pair-port>                    # enter the 6-digit code
-adb connect 127.0.0.1:<connect-port>
-adb devices                                        # confirm 'device'
 ```
-(If your connect port isn't the default, set `AGENT_ADB_SERIAL=127.0.0.1:<port>`.)
+(There is **no** `pkg install termux-widget` — that's a separate app; see Step 5.)
 
-### Type-anywhere dictation (Wispr Flow-style)
+#### Step 2 — enable Wireless Debugging & pair adb (grant permission)
+1. Android **Settings → Developer options → Wireless debugging → ON**.
+2. Tap **"Pair device with a pairing code"** — note the IP:PORT and 6-digit code.
+3. In Termux:
 ```bash
-python -m local_agent.voice --type                # Enter/Enter loop, types where your cursor is
-python -m local_agent.voice --type --once --seconds 6   # one-shot (bind to a Termux:Widget button)
+adb pair 127.0.0.1:<pairing-port>                 # enter the 6-digit code when asked
+adb connect 127.0.0.1:<connect-port>              # the port shown on the Wireless debugging screen
+adb devices                                        # must show a line ending in 'device'
 ```
-Bind the `--once` form to a **Termux:Widget** shortcut so a home-screen button = "speak →
-it types into whatever app field is focused." (Plain words type reliably; some punctuation/
-non-ASCII may not round-trip.)
+If the serial isn't the default, set `AGENT_ADB_SERIAL=127.0.0.1:<connect-port>`.
+> Wireless debugging can reset its port after a reboot — re-run `adb connect` if `adb devices`
+> is empty. This grants the agent input control; revoke anytime by turning Wireless debugging off.
 
-### Automating through an app
-```
-yh> take a screenshot, find the "Transfer" button, and tap it
-yh> open my notes app and type today's summary
-```
-The agent uses `screenshot`/`find_on_screen` to *see*, then `tap`/`type_text`/`swipe`.
-
-### 🔴 Killswitch (stop automation instantly)
-Every `tap` / `type` / `screen_automate` step checks a **stop file** first. Create it to halt:
+#### Step 3 — test it works (safest first test)
+Open a notes app, tap into a text field, then:
 ```bash
-touch ~/.local_agent/STOP        # halts immediately; rm it to resume
+python -m local_agent.voice --type                # Enter → speak → Enter; it types into the field
 ```
-Best: use the ready-made **Termux:Widget** buttons in
-**[`scripts/termux-widgets/`](scripts/termux-widgets/)** — a one-tap killswitch (`stop-agent`),
-a resume button, and voice-capture buttons (`dictate-type`, `dictate-note`):
+If your words appear in the field, ADB input works. (Plain words type reliably; heavy
+punctuation / non-ASCII may not round-trip.)
+
+#### Step 4 — use it
+- **Type-anywhere dictation:** `python -m local_agent.voice --type`
+- **Automate an app** (agent sees → taps):
+  ```
+  yh> take a screenshot, find the "Transfer" button, and tap it
+  yh> open my notes app and type today's summary
+  ```
+  It uses `screenshot`/`find_on_screen` to see, then `tap`/`type_text`/`swipe`.
+
+#### Step 5 — home-screen buttons + KILLSWITCH (do this before automating)
+Install the **Termux:Widget app from F-Droid** (it's an app, not a `pkg`), then:
 ```bash
 mkdir -p ~/.shortcuts && cp scripts/termux-widgets/* ~/.shortcuts/ && \
   chmod +x ~/.shortcuts/* && rm ~/.shortcuts/README.md
 ```
-Then add a Termux:Widget to your home screen. Path is `AGENT_KILLSWITCH`;
-`screen_automate` also has a hard step cap (`AGENT_SCREEN_MAX_STEPS`, 20).
+Long-press home screen → **Widgets → Termux:Widget** → place one per script:
+| Button | Does |
+|---|---|
+| 🔴 `stop-agent` | **Killswitch** — halts automation instantly |
+| 🟢 `resume-agent` | Clears the killswitch |
+| `dictate-type` | Speak → types into the focused app field |
+| `dictate-note` | Speak → appends to today's daily note |
+
+The killswitch is just a file: every `tap`/`type`/step checks `~/.local_agent/STOP` first
+(`AGENT_KILLSWITCH`). `touch` it to halt, `rm` to resume. `screen_automate` also caps steps
+(`AGENT_SCREEN_MAX_STEPS`, 20). **Keep the 🔴 button on your home screen before running any
+tap-through automation.**
 
 > ⚠️ Screen automation acts on your *whole phone*. It's `GUARDED` (asks in `hitl`), OCR-based
 > tapping can misfire on unusual layouts, and it's untested against every app — keep the
