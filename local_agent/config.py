@@ -122,6 +122,21 @@ class Config:
     whisper_beam_size: int = field(
         default_factory=lambda: _env_int("AGENT_WHISPER_BEAM", 5)
     )
+
+    # --- Screen interaction (ADB) ---
+    # Optional explicit adb serial (e.g. "localhost:5555" for wireless self-adb).
+    adb_serial: str = field(default_factory=lambda: _env_str("AGENT_ADB_SERIAL", ""))
+    # KILLSWITCH: when this file exists, screen automation halts immediately (it's
+    # checked before every tap/type/step). Create it to stop mid-run.
+    killswitch_path: Path = field(
+        default_factory=lambda: Path(
+            _env_str("AGENT_KILLSWITCH", str(Path.home() / ".local_agent" / "STOP"))
+        )
+    )
+    # Cap on steps a single screen_automate call will run (defence in depth).
+    screen_max_steps: int = field(
+        default_factory=lambda: _env_int("AGENT_SCREEN_MAX_STEPS", 20)
+    )
     # num_ctx: keep small or the KV cache OOM-kills on 8 GB. NOT the 256K max.
     num_ctx: int = field(default_factory=lambda: _env_int("AGENT_NUM_CTX", 6144))
     temperature: float = field(

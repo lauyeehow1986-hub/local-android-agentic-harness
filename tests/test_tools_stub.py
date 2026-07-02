@@ -41,6 +41,12 @@ CONTRACT_TOOLS = {
     "git_sync",
     "open_app",
     "latest_file",
+    "screenshot",
+    "find_on_screen",
+    "tap",
+    "swipe",
+    "type_text",
+    "screen_automate",
     "maps",
     "clipboard",
     "notify",
@@ -85,6 +91,10 @@ def test_guarded_set(reg):
         "shell",
         "git_sync",
         "open_app",
+        "tap",
+        "swipe",
+        "type_text",
+        "screen_automate",
     }
 
 

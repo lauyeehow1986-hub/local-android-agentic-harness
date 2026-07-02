@@ -48,14 +48,14 @@ class Tool:
 # The registry is populated by register() calls in each tool module, wired up
 # in build_registry() below to avoid import-order surprises.
 def build_registry() -> dict[str, Tool]:
-    from . import vault, web, data, generate, system, maps, device, research
+    from . import vault, web, data, generate, system, maps, device, research, screen
 
     reg: dict[str, Tool] = {}
 
     def add(tool: Tool) -> None:
         reg[tool.name] = tool
 
-    for mod in (vault, web, data, generate, system, maps, device, research):
+    for mod in (vault, web, data, generate, system, maps, device, research, screen):
         for tool in mod.TOOLS:
             add(tool)
     return reg

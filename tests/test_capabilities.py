@@ -172,6 +172,66 @@ def test_latest_file_missing_folder(tmp_path):
     assert "folder not found" in out
 
 
+def test_screen_tools_need_adb(tmp_path, monkeypatch):
+    from local_agent.tools import screen
+
+    monkeypatch.setattr(screen.shutil, "which", lambda n: None)
+    ctx = _ctx(tmp_path)
+    assert "adb" in _reg()["screenshot"].fn({}, ctx).lower()
+    assert "adb" in _reg()["tap"].fn({"x": 1, "y": 2}, ctx).lower()
+    assert "adb" in _reg()["type_text"].fn({"text": "hi"}, ctx).lower()
+
+
+def test_screen_killswitch_halts(tmp_path, monkeypatch):
+    from local_agent.tools import screen
+
+    ctx = _ctx(tmp_path)
+    ks = tmp_path / "STOP"
+    ks.write_text("")
+    ctx.config.killswitch_path = ks
+    # adb present, but killswitch is active → refuse before doing anything.
+    monkeypatch.setattr(screen.shutil, "which", lambda n: "/usr/bin/adb")
+    out = _reg()["tap"].fn({"x": 10, "y": 20}, ctx)
+    assert "KILLSWITCH" in out
+    out2 = _reg()["type_text"].fn({"text": "x"}, ctx)
+    assert "KILLSWITCH" in out2
+
+
+def test_screen_tap_runs_adb(tmp_path, monkeypatch):
+    from local_agent.tools import screen
+
+    ctx = _ctx(tmp_path)
+    ctx.config.killswitch_path = tmp_path / "nope"  # inactive
+    monkeypatch.setattr(screen.shutil, "which", lambda n: "/usr/bin/adb")
+    calls = {}
+    monkeypatch.setattr(screen.subprocess, "run", lambda cmd, **k: calls.setdefault("cmd", cmd) or type("R", (), {"returncode": 0, "stdout": b"", "stderr": b""})())
+    out = _reg()["tap"].fn({"x": 100, "y": 200}, ctx)
+    assert "tapped (100,200)" in out
+    assert calls["cmd"][-3:] == ["tap", "100", "200"]
+
+
+def test_screen_find_parses_tesseract(tmp_path, monkeypatch):
+    from local_agent.tools import screen
+
+    ctx = _ctx(tmp_path)
+    monkeypatch.setattr(screen, "screenshot", lambda a, c: str(tmp_path / "s.png"))
+    (tmp_path / "s.png").write_bytes(b"x")
+    # word box: "Login" at left=100 top=200 w=80 h=40 → center (140,220)
+    monkeypatch.setattr(
+        screen, "_tesseract_tsv",
+        lambda p, min_conf=40: [{"text": "Login", "left": 100, "top": 200, "width": 80, "height": 40, "conf": 90}],
+    )
+    out = _reg()["find_on_screen"].fn({"text": "login"}, ctx)
+    assert "(140,220)" in out
+
+
+def test_type_text_escaping():
+    from local_agent.tools.screen import _escape_input
+
+    assert _escape_input("hello world") == "hello%sworld"
+    assert "\\&" in _escape_input("a & b")
+
+
 def test_voice_dictation_appends_to_note(tmp_path):
     from local_agent import voice
     from local_agent.loop import Agent

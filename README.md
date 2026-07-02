@@ -289,6 +289,7 @@ your hands by design.
 `analyze_data` `check_data` `query_csv` `clean_data`*(G)* `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` ·
 `make_slides`*(G)* `make_html_report`*(G)* `report_csv`*(G)* `diagram`*(G)* `rephrase` ·
 `maps` `open_app`*(G)* `clipboard` `notify` `location` `speak` ·
+`screenshot` `find_on_screen` `tap`*(G)* `swipe`*(G)* `type_text`*(G)* `screen_automate`*(G)* ·
 `latest_file` `shell`*(G)* `git_sync`*(G)* `request_approval`
 
 **(G) = GUARDED** (writes/deletes/sends/shell). In `hitl` they require approval; in `full`
@@ -407,6 +408,16 @@ and any one-time setup. **(G) = GUARDED** (approval-gated).
 | `location` | provider | GPS/network location as JSON. *"what's near me?"* |
 | `speak` | **text** | Text-to-speech aloud. |
 
+### Screen interaction (Android via ADB — see *Screen automation* below)
+| Tool | Args | What it does · example |
+|---|---|---|
+| `screenshot` | path | Capture the screen to a PNG. |
+| `find_on_screen` | **text** | Locate on-screen text + its tap coordinates (screenshot + OCR). |
+| `tap` *(G)* | x,y OR text | Tap at coordinates or on on-screen text. |
+| `swipe` *(G)* | **x1,y1,x2,y2**, ms | Swipe/scroll. |
+| `type_text` *(G)* | **text** | Type into the focused field (dictation-into-any-app, Wispr-style). |
+| `screen_automate` *(G)* | **steps** | Run a screen-action sequence with a killswitch. *"open my banking app and read the balance"* |
+
 ### System / files / control
 | Tool | Args | What it does · example |
 |---|---|---|
@@ -522,6 +533,50 @@ yh> analyze /sdcard/Download/cohort.csv and save a histogram to /sdcard/Download
 ```
 `analyze_data` reports per-column quartiles/sd and pairwise correlations always; the
 plot needs matplotlib.
+
+## Screen automation & type-anywhere (Wispr-style)
+
+The agent can **see the screen and tap through any app**, and **type dictation into any
+focused field** — via ADB on the device.
+
+### One-time setup (grant ADB on the phone)
+```bash
+pkg install -y android-tools tesseract           # adb + on-screen OCR
+# Android Settings → Developer options → Wireless debugging → ON → "Pair device with code"
+adb pair 127.0.0.1:<pair-port>                    # enter the 6-digit code
+adb connect 127.0.0.1:<connect-port>
+adb devices                                        # confirm 'device'
+```
+(If your connect port isn't the default, set `AGENT_ADB_SERIAL=127.0.0.1:<port>`.)
+
+### Type-anywhere dictation (Wispr Flow-style)
+```bash
+python -m local_agent.voice --type                # Enter/Enter loop, types where your cursor is
+python -m local_agent.voice --type --once --seconds 6   # one-shot (bind to a Termux:Widget button)
+```
+Bind the `--once` form to a **Termux:Widget** shortcut so a home-screen button = "speak →
+it types into whatever app field is focused." (Plain words type reliably; some punctuation/
+non-ASCII may not round-trip.)
+
+### Automating through an app
+```
+yh> take a screenshot, find the "Transfer" button, and tap it
+yh> open my notes app and type today's summary
+```
+The agent uses `screenshot`/`find_on_screen` to *see*, then `tap`/`type_text`/`swipe`.
+
+### 🔴 Killswitch (stop automation instantly)
+Every `tap` / `type` / `screen_automate` step checks a **stop file** first. Create it to halt:
+```bash
+touch ~/.local_agent/STOP        # halts immediately; rm it to resume
+```
+Best: make a **Termux:Widget** button that runs `touch ~/.local_agent/STOP` (put a script in
+`~/.shortcuts/`), so you have a one-tap physical killswitch on your home screen. Path is
+`AGENT_KILLSWITCH`; `screen_automate` also has a hard step cap (`AGENT_SCREEN_MAX_STEPS`, 20).
+
+> ⚠️ Screen automation acts on your *whole phone*. It's `GUARDED` (asks in `hitl`), OCR-based
+> tapping can misfire on unusual layouts, and it's untested against every app — keep the
+> killswitch handy and start with low-stakes flows.
 
 ## Web automation (browse, fill, order — with a payment guardrail)
 

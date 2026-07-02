@@ -27,6 +27,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import time
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -152,6 +153,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--no-confirm", action="store_true",
         help="dictation: save immediately without reading the transcript back",
     )
+    ap.add_argument(
+        "--type", dest="type_mode", action="store_true",
+        help="Wispr-style: type the transcript into the focused app field (needs ADB)",
+    )
+    ap.add_argument(
+        "--once", action="store_true",
+        help="record one turn then exit (for binding to a Termux:Widget button)",
+    )
+    ap.add_argument(
+        "--seconds", type=int, default=6,
+        help="fixed recording length for --once mode (no Enter prompts)",
+    )
     args = ap.parse_args(argv)
 
     from .config import load_config
@@ -168,19 +181,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("Voice loop ready. Enter = start recording, Enter again = stop, Ctrl-C = quit.")
 
     while True:
-        try:
-            input("\n[Enter to START recording] ")
-        except (EOFError, KeyboardInterrupt):
-            print("\nbye")
-            return 0
-        wav = _start_record(args.max_seconds)
-        if not wav:
-            continue
-        try:
-            input("[recording… Enter to STOP] ")
-        except (EOFError, KeyboardInterrupt):
-            pass
-        _stop_record()
+        if args.once:
+            # No terminal interaction (widget-triggered): fixed-length capture.
+            print(f"recording {args.seconds}s… speak now")
+            wav = _start_record(args.max_seconds)
+            if not wav:
+                return 1
+            time.sleep(args.seconds)
+            _stop_record()
+        else:
+            try:
+                input("\n[Enter to START recording] ")
+            except (EOFError, KeyboardInterrupt):
+                print("\nbye")
+                return 0
+            wav = _start_record(args.max_seconds)
+            if not wav:
+                continue
+            try:
+                input("[recording… Enter to STOP] ")
+            except (EOFError, KeyboardInterrupt):
+                pass
+            _stop_record()
         if not (wav.exists() and wav.stat().st_size > 0):
             print("(no audio captured)")
             continue
@@ -192,6 +214,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             _speak("Sorry, I didn't catch that.")
             continue
         print(f"you: {text}")
+
+        if args.type_mode:
+            # Wispr-style: type into whatever field is focused (via ADB).
+            result = agent.registry["type_text"].fn({"text": text}, agent.ctx)
+            print(result)
+            if args.once:
+                return 0
+            continue
 
         if args.dictate:
             # Read the transcript back so mis-hears can be caught before saving.
@@ -211,12 +241,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             result = _append_dictation(agent, text, note)
             print(result)
             _speak("Saved.")
+            if args.once:
+                return 0
             continue
 
         fe = VoiceFrontend()
         answer = agent.run_task(text, fe)
         print(f"agent: {answer}")
         _speak(_spoken_form(agent, answer, full=args.full_speech))
+        if args.once:
+            return 0
 
 
 if __name__ == "__main__":

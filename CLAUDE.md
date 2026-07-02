@@ -144,7 +144,7 @@ long observations destroy latency by bloating the next prefill.
 Tool list (must match `agent_system.md`):
 `vault_search` `vault_semantic_search` `vault_read` `vault_list` `vault_write`(G) · `web_search` `web_scrape` `browser`(G) `research` ·
 `analyze_data` `check_data` `query_csv` `clean_data`(G) `analyze_image` `analyze_pdf` `transcribe` `meeting_notes` · `make_slides`(G) `make_html_report`(G) `report_csv`(G) `diagram`(G) `rephrase` ·
-`maps` `open_app`(G) `clipboard` `notify` `location` `speak` · `latest_file` `shell`(G) `git_sync`(G) `request_approval`.
+`maps` `open_app`(G) `clipboard` `notify` `location` `speak` · `screenshot` `find_on_screen` `tap`(G) `swipe`(G) `type_text`(G) `screen_automate`(G) · `latest_file` `shell`(G) `git_sync`(G) `request_approval`.
 
 Implementation notes:
 - **`vault_write`** modes: `create` / `overwrite` / `append`. One note per call (individually approvable). Preserve YAML frontmatter. Daily logs append to `Daily/YYYY-MM-DD.md`.

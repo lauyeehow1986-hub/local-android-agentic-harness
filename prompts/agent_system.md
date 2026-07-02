@@ -125,6 +125,14 @@ Call tools by the exact `name`. `INPUT` keys must match exactly. Tags: [SAFE] / 
 - `location` [SAFE] — get the phone's location as JSON. `{"provider": "network"|"gps"}`
 - `speak` [SAFE] — speak text aloud via Android TTS. `{"text": str}`
 
+### Screen interaction (Android, via ADB — needs Wireless Debugging)
+- `screenshot` [SAFE] — capture the screen to a PNG; returns the path. `{"path": str}`
+- `find_on_screen` [SAFE] — find on-screen text and its tap coordinates (screenshot + OCR). `{"text": str}`
+- `tap` [GUARDED] — tap at coordinates or on on-screen text. `{"x": int, "y": int}` OR `{"text": str}`
+- `swipe` [GUARDED] — swipe/scroll. `{"x1": int, "y1": int, "x2": int, "y2": int, "ms": int}`
+- `type_text` [GUARDED] — type into the focused field (dictation into any app). `{"text": str}`
+- `screen_automate` [GUARDED] — run a sequence of screen actions with a killswitch. `{"steps": [{"action": "find_and_tap"|"tap"|"type"|"swipe"|"wait"|"key", ...}]}`. To automate an app: `screenshot`/`find_on_screen` to SEE, then act step by step. A killswitch file halts it instantly — if a step reports "KILLSWITCH", stop and tell the user.
+
 ### System / control
 - `latest_file` [SAFE] — path of the newest file in a folder (optionally by type), so the user can say "the latest screenshot" without dictating a path. Chain its output into `analyze_image`/`analyze_pdf`/`transcribe`. `{"folder": str, "type": "image"|"audio"|"pdf"|".ext", "recursive": bool}` (all optional; defaults to Downloads)
 - `shell` [GUARDED] — run a Termux shell command. `{"cmd": str}`

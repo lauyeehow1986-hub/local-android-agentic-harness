@@ -41,6 +41,9 @@ TOOLS (exact name + INPUT keys; [S]=SAFE [G]=GUARDED):
 - maps [S] {"query": str} OR {"origin": str, "destination": str}  (place search / driving directions, returns Maps link)
 - open_app [G] {"target": str}  (open a URL/deeplink on the phone, e.g. Grab app or Maps nav; cannot order/pay)
 - clipboard [S] {"mode": "read"|"write", "text": str} · notify [S] {"title": str, "content": str} · location [S] {"provider": str} · speak [S] {"text": str}
+- screenshot [S] {"path": str} · find_on_screen [S] {"text": str}  (screen capture + OCR-locate coords, via ADB)
+- tap [G] {"x":int,"y":int}|{"text":str} · swipe [G] {"x1","y1","x2","y2","ms"} · type_text [G] {"text": str}  (Android input via ADB; killswitch-gated)
+- screen_automate [G] {"steps":[{"action":"find_and_tap"|"tap"|"type"|"swipe"|"wait"|"key",...}]}  (screenshot/find to SEE then act; stop if a step says KILLSWITCH)
 - latest_file [S] {"folder": str, "type": "image"|"audio"|"pdf"|".ext"}  (newest file path; chain into analyze_image/pdf/transcribe; default Downloads)
 - shell [G] {"cmd": str}
 - git_sync [G] {"repo_path": str, "message": str}
