@@ -537,51 +537,69 @@ plot needs matplotlib.
 ## Screen automation & type-anywhere (Wispr-style) — step by step
 
 The agent can **see the screen and tap through any app**, and **type dictation into any
-focused field** — via ADB on the device. Follow these steps in order.
+focused field** — via ADB. **It all runs on the one phone**: Termux self-connects to the
+phone's own ADB. No computer is involved.
+
+> Legend for each step:
+> **💻 TERMUX** = type this in the Termux terminal · **📱 PHONE UI** = tap this in Android Settings.
 
 #### Step 1 — install adb + OCR
+**💻 TERMUX**
 ```bash
-pkg install -y android-tools tesseract           # adb + on-screen OCR
+pkg install -y android-tools tesseract
 ```
 (There is **no** `pkg install termux-widget` — that's a separate app; see Step 5.)
 
-#### Step 2 — enable Wireless Debugging & pair adb (grant permission)
-1. Android **Settings → Developer options → Wireless debugging → ON**.
-2. Tap **"Pair device with a pairing code"** — note the IP:PORT and 6-digit code.
-3. In Termux:
-```bash
-adb pair 127.0.0.1:<pairing-port>                 # enter the 6-digit code when asked
-adb connect 127.0.0.1:<connect-port>              # the port shown on the Wireless debugging screen
-adb devices                                        # must show a line ending in 'device'
-```
-If the serial isn't the default, set `AGENT_ADB_SERIAL=127.0.0.1:<connect-port>`.
-> Wireless debugging can reset its port after a reboot — re-run `adb connect` if `adb devices`
-> is empty. This grants the agent input control; revoke anytime by turning Wireless debugging off.
+#### Step 2 — turn on Wireless debugging
+**📱 PHONE UI:** Settings → **Developer options** → **Wireless debugging → ON**.
+(If Developer options is hidden: Settings → About phone → tap **Build number** 7×.)
 
-#### Step 3 — test it works (safest first test)
-Open a notes app, tap into a text field, then:
+#### Step 3 — pair, then connect
+**📱 PHONE UI:** on the Wireless debugging screen, tap **"Pair device with a pairing code"** —
+a pop-up shows an **IP:PAIRING-PORT** and a **6-digit code**. Leave it open.
+
+**💻 TERMUX** (use the pairing port from the pop-up; type the 6-digit code when asked):
 ```bash
-python -m local_agent.voice --type                # Enter → speak → Enter; it types into the field
+adb pair 127.0.0.1:<PAIRING-PORT>
+```
+**📱 PHONE UI:** now read the **main** Wireless debugging screen — it shows a *different*
+**IP:CONNECT-PORT** (the "IP address & Port" line).
+
+**💻 TERMUX** (use that connect port):
+```bash
+adb connect 127.0.0.1:<CONNECT-PORT>
+adb devices                              # want a line ending in 'device'
+```
+- The **pairing port ≠ the connect port**, and the connect port **changes** after a reboot or
+  toggling Wireless debugging — re-read it and re-run `adb connect` each session.
+- If `127.0.0.1` fails on ColorOS, use the phone's **LAN IP** shown before the colon, e.g.
+  `adb connect 192.168.1.5:<CONNECT-PORT>`, and set `AGENT_ADB_SERIAL` to match.
+
+#### Step 4 — test it (safest first test)
+**📱 PHONE UI:** open a notes app and tap into a text field.
+**💻 TERMUX:**
+```bash
+python -m local_agent.voice --type       # Enter → speak → Enter; it types into that field
 ```
 If your words appear in the field, ADB input works. (Plain words type reliably; heavy
 punctuation / non-ASCII may not round-trip.)
 
-#### Step 4 — use it
-- **Type-anywhere dictation:** `python -m local_agent.voice --type`
-- **Automate an app** (agent sees → taps):
-  ```
-  yh> take a screenshot, find the "Transfer" button, and tap it
-  yh> open my notes app and type today's summary
-  ```
-  It uses `screenshot`/`find_on_screen` to see, then `tap`/`type_text`/`swipe`.
+#### Step 5 — use it
+**💻 TERMUX** — type-anywhere dictation: `python -m local_agent.voice --type`
+**💻 TERMUX** — automate an app (the agent sees → taps):
+```
+yh> take a screenshot, find the "Transfer" button, and tap it
+yh> open my notes app and type today's summary
+```
 
-#### Step 5 — home-screen buttons + KILLSWITCH (do this before automating)
-Install the **Termux:Widget app from F-Droid** (it's an app, not a `pkg`), then:
+#### Step 6 — home-screen buttons + KILLSWITCH (set up before automating)
+**📱 PHONE UI:** install the **Termux:Widget app from F-Droid** (an app, not a `pkg`).
+**💻 TERMUX:**
 ```bash
 mkdir -p ~/.shortcuts && cp scripts/termux-widgets/* ~/.shortcuts/ && \
   chmod +x ~/.shortcuts/* && rm ~/.shortcuts/README.md
 ```
-Long-press home screen → **Widgets → Termux:Widget** → place one per script:
+**📱 PHONE UI:** long-press home screen → **Widgets → Termux:Widget** → place one per script:
 | Button | Does |
 |---|---|
 | 🔴 `stop-agent` | **Killswitch** — halts automation instantly |
