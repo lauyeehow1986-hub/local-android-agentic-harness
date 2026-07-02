@@ -570,9 +570,15 @@ Every `tap` / `type` / `screen_automate` step checks a **stop file** first. Crea
 ```bash
 touch ~/.local_agent/STOP        # halts immediately; rm it to resume
 ```
-Best: make a **Termux:Widget** button that runs `touch ~/.local_agent/STOP` (put a script in
-`~/.shortcuts/`), so you have a one-tap physical killswitch on your home screen. Path is
-`AGENT_KILLSWITCH`; `screen_automate` also has a hard step cap (`AGENT_SCREEN_MAX_STEPS`, 20).
+Best: use the ready-made **Termux:Widget** buttons in
+**[`scripts/termux-widgets/`](scripts/termux-widgets/)** — a one-tap killswitch (`stop-agent`),
+a resume button, and voice-capture buttons (`dictate-type`, `dictate-note`):
+```bash
+mkdir -p ~/.shortcuts && cp scripts/termux-widgets/* ~/.shortcuts/ && \
+  chmod +x ~/.shortcuts/* && rm ~/.shortcuts/README.md
+```
+Then add a Termux:Widget to your home screen. Path is `AGENT_KILLSWITCH`;
+`screen_automate` also has a hard step cap (`AGENT_SCREEN_MAX_STEPS`, 20).
 
 > ⚠️ Screen automation acts on your *whole phone*. It's `GUARDED` (asks in `hitl`), OCR-based
 > tapping can misfire on unusual layouts, and it's untested against every app — keep the

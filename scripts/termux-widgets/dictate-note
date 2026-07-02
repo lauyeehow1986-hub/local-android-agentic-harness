@@ -1,0 +1,6 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Press this widget, speak, and it appends the transcript (timestamped) to
+# today's daily note in the vault. One-shot, no confirmation.
+cd "$HOME/local-android-agentic-harness" 2>/dev/null || {
+  echo "repo not found at ~/local-android-agentic-harness"; exit 1; }
+exec python -m local_agent.voice --dictate --once --no-confirm --seconds 8
