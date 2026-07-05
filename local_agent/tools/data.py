@@ -478,6 +478,55 @@ def _is_transcribe_only(question: str) -> bool:
     return any(w in q for w in ("transcribe", "ocr", "all text", "read all", "extract text"))
 
 
+def _ocr_looks_sparse(text: Optional[str]) -> bool:
+    """True if a Tesseract result looks failed/garbled — the signal to fall back
+    to the OCR VLM. Garbled OCR fragments into stray single characters and
+    symbols (the Chinese-worksheet failure), whereas real text has multi-char
+    words. Clean receipts/labels read by Tesseract do NOT trip this."""
+    s = (text or "").strip()
+    if len(s) < 10:
+        return True
+    tokens = s.split()
+    if not tokens:
+        return True
+    junk = 0
+    for t in tokens:
+        # A token is "junk" if it's a lone character or has no letters/digits.
+        if len(t) <= 1 or not any(c.isalnum() for c in t):
+            junk += 1
+    return (junk / len(tokens)) > 0.5
+
+
+def _vlm_ocr(ctx: ToolContext, img_bytes: bytes) -> Optional[str]:
+    """Read text from an image with the OCR-capable vision model (Qwen2.5-VL).
+    Load-on-demand; returns None if there's no client/model or it errors, so the
+    caller can fall back. Prompts for a faithful transcription (no translating,
+    no inventing) — the VLM is only reached when Tesseract already failed."""
+    if ctx.client is None:
+        return None
+    model = getattr(ctx.config, "ocr_vlm_model", "") or ""
+    if not model:
+        return None
+    import base64 as _b64
+
+    max_px = getattr(ctx.config, "ocr_vlm_max_px", 1536)
+    b64 = _b64.b64encode(_downscale_bytes(img_bytes, max_px)).decode("ascii")
+    keep_alive = getattr(ctx.config, "vision_keep_alive", "0")
+    prompt = (
+        "Transcribe ALL text in this image exactly as written. Preserve line "
+        "breaks and the original language (including Chinese characters). Output "
+        "only the transcribed text — no commentary, no translation. If a "
+        "character is unclear, give your best single guess; never invent extra "
+        "text."
+    )
+    try:
+        out = ctx.client.generate(prompt, model=model, images=[b64], keep_alive=keep_alive)
+    except Exception:  # noqa: BLE001 - any failure (model not pulled, OOM) → fall back
+        return None
+    out = (out or "").strip()
+    return out or None
+
+
 def _preprocess_for_ocr(raw: bytes) -> bytes:
     """Grayscale + autocontrast + upscale small images — big accuracy win for
     Tesseract on phone photos/receipts. No-op (returns raw) without Pillow."""
@@ -562,10 +611,13 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
     """Read or analyze an image: describe it, answer a question, or OCR text.
 
     For reading printed text (receipts, labels, documents) it prefers the
-    **Tesseract** OCR engine — a small vision model invents digits. The LLM then
-    answers your question over the accurate OCR text. Pure description/VQA still
-    uses the on-demand vision model. Force a path with `ocr` (true/false) or the
-    AGENT_OCR_ENGINE config (auto|tesseract|vision).
+    **Tesseract** OCR engine — a small vision model invents digits. When Tesseract
+    comes back sparse/garbled (angled photos, handwriting, Chinese writing-grids)
+    it falls back to the **OCR VLM** (Qwen2.5-VL), which reads such images — and
+    Chinese — far better. The LLM then answers your question over that text. Pure
+    description/VQA still uses the describe vision model. Force a path with `ocr`
+    (true/false), `psm` (Tesseract page mode, e.g. 4 for documents), or the
+    AGENT_OCR_ENGINE config (auto|tesseract|vlm|vision).
     """
     path = str(args.get("path", "")).strip()
     question = str(args.get("question", "Describe this image in detail.")).strip()
@@ -586,21 +638,41 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
     engine = getattr(ctx.config, "ocr_engine", "auto")
     want_ocr = bool(ocr_arg) if ocr_arg is not None else _looks_like_ocr(question)
 
-    # OCR path: Tesseract first (accurate), then answer the question over it.
-    if engine != "vision" and (want_ocr or engine == "tesseract"):
+    # OCR path: Tesseract first (accurate, no digit-invention), and when it comes
+    # back sparse/garbled (photos, handwriting, Chinese grids) fall back to the
+    # OCR-capable VLM (Qwen2.5-VL). `engine="vlm"` forces the VLM straight away.
+    if engine != "vision" and (want_ocr or engine in ("tesseract", "vlm")):
         psm = args.get("psm")
         psm = str(psm) if psm is not None else None
-        text = _tesseract_ocr(raw, ctx, psm=psm)
+
+        text: Optional[str] = None
+        if engine != "vlm":
+            text = _tesseract_ocr(raw, ctx, psm=psm)
+            if text and not _ocr_looks_sparse(text):
+                if _is_transcribe_only(question):
+                    return text
+                return _answer_over_text(ctx, text, question)
+
+        # Tesseract weak/empty (or forced): try the OCR VLM.
+        vlm_text = _vlm_ocr(ctx, raw)
+        if vlm_text:
+            if _is_transcribe_only(question):
+                return vlm_text
+            return _answer_over_text(ctx, vlm_text, question)
+
+        # No VLM result — use whatever Tesseract managed, else a clear hint.
         if text:
             if _is_transcribe_only(question):
                 return text
             return _answer_over_text(ctx, text, question)
-        if engine == "tesseract":
+        if engine in ("tesseract", "vlm"):
             return (
-                "tesseract OCR found no text (install it: `pkg install tesseract`, "
-                "or the image has no readable text)."
+                "OCR found no readable text. For hard images (photos/handwriting/"
+                "Chinese grids) pull the vision reader — `ollama pull qwen2.5vl:3b` "
+                "— or improve the photo (flat, even light); Tesseract also needs "
+                "`pkg install tesseract`."
             )
-        # auto: fall through to the vision model.
+        # auto: fall through to the describe vision model.
 
     if ctx.client is None:
         return "vision unavailable: no model client in context (and no tesseract text)"

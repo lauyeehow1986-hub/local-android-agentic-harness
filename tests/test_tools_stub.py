@@ -638,6 +638,90 @@ def test_analyze_image_psm_override_passed_through(reg, tmp_path, monkeypatch):
     assert seen["psm"] == "4"           # coerced to str, forwarded to Tesseract
 
 
+def test_ocr_sparse_detection():
+    from local_agent.tools.data import _ocr_looks_sparse
+
+    # Garbled Tesseract-on-Chinese output (the worksheet failure) → sparse.
+    assert _ocr_looks_sparse("区 — gy (FZFR) 到 T e 3E | e 5. &3 F")
+    assert _ocr_looks_sparse("")
+    assert _ocr_looks_sparse("a b")
+    # Clean multi-word text (receipt / Chinese words) → NOT sparse.
+    assert not _ocr_looks_sparse("Egg Fried Rice 7.30\nSubTotal 16.14 Total 23.44")
+    assert not _ocr_looks_sparse("菩提学校一年级听写表 今天 青菜 香香的米饭")
+
+
+def test_analyze_image_falls_back_to_vlm_when_tesseract_sparse(reg, tmp_path, monkeypatch):
+    """Garbled Tesseract output routes to the OCR VLM (Qwen2.5-VL)."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    client = _CapturingClient(reply="菩提学校 一年级听写表")
+    ctx2 = ToolContext(config=cfg, client=client)
+    img = tmp_path / "sheet.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake")
+    # Tesseract returns garbage → sparse → must fall back to the VLM.
+    monkeypatch.setattr(data, "_tesseract_ocr", lambda raw, ctx, psm=None: "区 — gy 到 T e 3E |")
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "transcribe all text"}, ctx2
+    )
+    assert out == "菩提学校 一年级听写表"
+    assert client.last["model"] == "qwen2.5vl:3b"   # routed to the OCR VLM
+    assert client.last.get("images")                # image bytes were sent
+
+
+def test_analyze_image_good_tesseract_skips_vlm(reg, tmp_path, monkeypatch):
+    """Clean Tesseract text is used verbatim; the VLM (hallucination risk) is not."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    img = tmp_path / "receipt.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake")
+    monkeypatch.setattr(
+        data, "_tesseract_ocr",
+        lambda raw, ctx, psm=None: "Egg Fried Rice 7.30\nSubTotal 16.14 Total 23.44",
+    )
+
+    def no_vlm(ctx, raw):
+        raise AssertionError("must not call the VLM when Tesseract is clean")
+
+    monkeypatch.setattr(data, "_vlm_ocr", no_vlm)
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "transcribe all text"}, ctx2
+    )
+    assert "16.14" in out
+
+
+def test_analyze_image_engine_vlm_forces_vlm(reg, tmp_path, monkeypatch):
+    """engine='vlm' reads straight with the VLM, skipping Tesseract."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    cfg.ocr_engine = "vlm"
+    ctx2 = ToolContext(config=cfg, client=None)
+    img = tmp_path / "img.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake")
+
+    def no_tess(raw, ctx, psm=None):
+        raise AssertionError("engine=vlm must skip Tesseract")
+
+    monkeypatch.setattr(data, "_tesseract_ocr", no_tess)
+    monkeypatch.setattr(data, "_vlm_ocr", lambda ctx, raw: "VLM TEXT")
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "transcribe all text"}, ctx2
+    )
+    assert out == "VLM TEXT"
+
+
 def test_analyze_image_missing_file(reg, ctx):
     out = reg["analyze_image"].fn({"path": "/nope/x.png"}, ctx)
     assert "not found" in out

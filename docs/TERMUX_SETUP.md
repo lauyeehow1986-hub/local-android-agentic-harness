@@ -84,9 +84,22 @@ yh> summarize the PDF at /storage/emulated/0/Download/<exact-name>.pdf
 pkg install -y tesseract             # accurate OCR for receipts/labels/documents
 pip install Pillow                   # preprocessing (grayscale/contrast/upscale)
 ollama pull moondream                # vision model, for describing scenes / VQA
+ollama pull qwen2.5vl:3b             # OCR VLM — hard images (photos/handwriting/Chinese)
 ```
 `analyze_image` auto-picks **Tesseract** for reading text (a small vision model
-*invents digits* on receipts) and the **vision model** for describing a scene.
+*invents digits* on receipts) and the **describe vision model** (moondream) for a
+scene. When Tesseract comes back sparse/garbled — angled photos, handwriting,
+Chinese writing-grid (田字格) worksheets — it **falls back to the OCR VLM**
+(`qwen2.5vl:3b`), which reads those far better, including Chinese. It's loaded
+on demand and unloaded after (never resident alongside the 4B). Controls:
+- `AGENT_OCR_ENGINE=auto` (default) · `tesseract` (never VLM) · `vlm` (force VLM,
+  skip Tesseract) · `vision` (force describe).
+- `AGENT_OCR_VLM_MODEL=qwen2.5vl:3b` — set `""` to disable the fallback.
+- Per call: `analyze_image {"path": "...", "ocr": true}` and optionally `"psm": 4`.
+
+> RAM note: `qwen2.5vl:3b` is ~3 GB. On 8 GB it runs load-on-demand but is slow;
+> keep the main 4B unloaded while it works (it uses `keep_alive=0`). If it OOMs,
+> route hard OCR to a LAN box via `OLLAMA_REMOTE_URL` + `/route remote`.
 
 **Chinese (or other languages):** install the language data, then set the lang env var.
 ```bash

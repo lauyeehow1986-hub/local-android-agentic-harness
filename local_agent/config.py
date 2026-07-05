@@ -94,11 +94,25 @@ class Config:
     # OCR engine for reading printed text: auto (Tesseract if installed, else the
     # vision model) | tesseract | vision. Tesseract is far more accurate for
     # receipts/documents — a small VLM invents digits.
+    # auto = Tesseract first, fall back to the OCR VLM when Tesseract is sparse/
+    # garbled (photos, handwriting, Chinese grids). tesseract = never VLM.
+    # vision = force the describe VLM. vlm = force the OCR VLM (skip Tesseract).
     ocr_engine: str = field(default_factory=lambda: _env_str("AGENT_OCR_ENGINE", "auto"))
     tesseract_lang: str = field(
         default_factory=lambda: _env_str("AGENT_TESSERACT_LANG", "eng")
     )
     tesseract_psm: str = field(default_factory=lambda: _env_str("AGENT_TESSERACT_PSM", "6"))
+    # OCR-capable vision model used when Tesseract fails (Qwen2.5-VL reads text —
+    # incl. Chinese — far better than moondream). Load-on-demand; pull it first:
+    # `ollama pull qwen2.5vl:3b`. Set "" to disable the VLM fallback entirely.
+    ocr_vlm_model: str = field(
+        default_factory=lambda: _env_str("AGENT_OCR_VLM_MODEL", "qwen2.5vl:3b")
+    )
+    # Longest-side px for VLM OCR — higher than describe (1024) so dense text is
+    # legible, but bounded to keep phone RAM/latency sane.
+    ocr_vlm_max_px: int = field(
+        default_factory=lambda: _env_int("AGENT_OCR_VLM_MAX_PX", 1536)
+    )
 
     # --- Speech-to-text (transcribe) ---
     # Backend: auto | whisper (openai-whisper CLI) | whispercpp | faster.
