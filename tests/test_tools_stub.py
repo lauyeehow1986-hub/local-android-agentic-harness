@@ -557,7 +557,7 @@ def test_analyze_image_ocr_uses_tesseract_not_vision(reg, tmp_path, monkeypatch)
     # Tesseract returns the REAL receipt text; vision must NOT be called.
     monkeypatch.setattr(
         data, "_tesseract_ocr",
-        lambda raw, ctx: "Egg Fried Rice with Grilled Chicken 7.30\nSubTotal $16.14",
+        lambda raw, ctx, psm=None: "Egg Fried Rice with Grilled Chicken 7.30\nSubTotal $16.14",
     )
 
     def no_vision(*a, **k):
@@ -582,7 +582,7 @@ def test_analyze_image_transcribe_returns_raw_ocr(reg, tmp_path, monkeypatch):
     ctx2 = ToolContext(config=cfg, client=None)  # no model needed for raw transcribe
     img = tmp_path / "label.png"
     img.write_bytes(b"\x89PNG fake")
-    monkeypatch.setattr(data, "_tesseract_ocr", lambda raw, ctx: "SERIAL ABC-123")
+    monkeypatch.setattr(data, "_tesseract_ocr", lambda raw, ctx, psm=None: "SERIAL ABC-123")
     out = reg["analyze_image"].fn(
         {"path": str(img), "question": "transcribe all text"}, ctx2
     )
@@ -602,7 +602,7 @@ def test_analyze_image_describe_uses_vision(reg, tmp_path, monkeypatch):
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"\xff\xd8\xff fake")
 
-    def no_tess(raw, ctx):
+    def no_tess(raw, ctx, psm=None):
         raise AssertionError("describe must not call tesseract")
 
     monkeypatch.setattr(data, "_tesseract_ocr", no_tess)
@@ -611,6 +611,31 @@ def test_analyze_image_describe_uses_vision(reg, tmp_path, monkeypatch):
         {"path": str(img), "question": "Describe what is in this photo"}, ctx2
     )
     assert "cat" in out
+
+
+def test_analyze_image_psm_override_passed_through(reg, tmp_path, monkeypatch):
+    """A per-call `psm` (e.g. 4 for single-column worksheets) reaches Tesseract."""
+    from local_agent.config import Config
+    from local_agent.tools import ToolContext, data
+
+    cfg = Config()
+    cfg.vault_path = tmp_path / "vault"
+    cfg.vault_path.mkdir()
+    ctx2 = ToolContext(config=cfg, client=None)
+    img = tmp_path / "sheet.png"
+    img.write_bytes(b"\x89PNG fake")
+    seen = {}
+
+    def capture(raw, ctx, psm=None):
+        seen["psm"] = psm
+        return "菩提学校"
+
+    monkeypatch.setattr(data, "_tesseract_ocr", capture)
+    out = reg["analyze_image"].fn(
+        {"path": str(img), "question": "transcribe all text", "psm": 4}, ctx2
+    )
+    assert out == "菩提学校"
+    assert seen["psm"] == "4"           # coerced to str, forwarded to Tesseract
 
 
 def test_analyze_image_missing_file(reg, ctx):

@@ -496,15 +496,20 @@ def _preprocess_for_ocr(raw: bytes) -> bytes:
         if longest < 1600:                       # upscale small text for OCR
             scale = 1600 / longest
             im = im.resize((int(im.width * scale), int(im.height * scale)))
+        elif longest > 2600:                     # downscale huge phone photos into
+            scale = 2600 / longest               # Tesseract's sweet spot (else it
+            im = im.resize((int(im.width * scale), int(im.height * scale)))  # mis-scales)
         out = io.BytesIO()
-        im.save(out, format="PNG")
-        return out.getvalue()
+        im.save(out, format="PNG", dpi=(300, 300))  # DPI hint: stop the "estimating
+        return out.getvalue()                        # resolution as N" guesswork
     except Exception:  # noqa: BLE001
         return raw
 
 
-def _tesseract_ocr(raw: bytes, ctx: ToolContext) -> Optional[str]:
+def _tesseract_ocr(raw: bytes, ctx: ToolContext, psm: Optional[str] = None) -> Optional[str]:
     """OCR image bytes with the Tesseract engine (accurate for printed text).
+    `psm` overrides the configured page-segmentation mode for this call (e.g. "4"
+    for single-column documents/worksheets, "6" for a uniform block/receipt).
     Returns None if tesseract isn't installed or produced nothing."""
     import shutil
     import subprocess
@@ -514,7 +519,7 @@ def _tesseract_ocr(raw: bytes, ctx: ToolContext) -> Optional[str]:
     if not exe:
         return None
     lang = getattr(ctx.config, "tesseract_lang", "eng")
-    psm = str(getattr(ctx.config, "tesseract_psm", "6"))
+    psm = str(psm if psm is not None else getattr(ctx.config, "tesseract_psm", "6"))
     data = _preprocess_for_ocr(raw)
     with tempfile.TemporaryDirectory() as td:
         img_path = Path(td) / "in.png"
@@ -522,7 +527,8 @@ def _tesseract_ocr(raw: bytes, ctx: ToolContext) -> Optional[str]:
         out_base = Path(td) / "out"
         try:
             subprocess.run(
-                [exe, str(img_path), str(out_base), "-l", lang, "--psm", psm],
+                [exe, str(img_path), str(out_base), "-l", lang,
+                 "--dpi", "300", "--psm", psm],
                 capture_output=True, text=True, timeout=120, check=True,
             )
         except Exception:  # noqa: BLE001 - treat any failure as "no tesseract result"
@@ -582,7 +588,9 @@ def analyze_image(args: dict[str, Any], ctx: ToolContext) -> str:
 
     # OCR path: Tesseract first (accurate), then answer the question over it.
     if engine != "vision" and (want_ocr or engine == "tesseract"):
-        text = _tesseract_ocr(raw, ctx)
+        psm = args.get("psm")
+        psm = str(psm) if psm is not None else None
+        text = _tesseract_ocr(raw, ctx, psm=psm)
         if text:
             if _is_transcribe_only(question):
                 return text
@@ -1180,7 +1188,7 @@ TOOLS = [
         tag="SAFE",
         fn=analyze_image,
         required=("path",),
-        optional=("question", "ocr"),
+        optional=("question", "ocr", "psm"),
         description="Read/analyze an image: OCR text (Tesseract) for receipts/labels, or describe via vision model.",
     ),
     Tool(

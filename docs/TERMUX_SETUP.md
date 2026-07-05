@@ -97,6 +97,21 @@ tesseract --list-langs                       # should now list chi_sim
 export AGENT_TESSERACT_LANG=chi_sim+eng       # mixed Chinese + English (good for SG); add to ~/.bashrc
 ```
 `chi_sim+eng` also applies to `analyze_pdf` OCR and on-screen OCR (`find_on_screen`).
+
+**Page-segmentation mode (psm) matters a lot.** The default `psm 6` (one uniform
+block) is right for receipts/labels. For **documents/worksheets** (multi-line pages,
+columns), `psm 4` reads far better — set it, or pass `"psm": 4` in an `analyze_image`
+call. If OCR comes back sparse/garbled on a page that looks clean, switch psm:
+```bash
+export AGENT_TESSERACT_PSM=4     # single-column documents/worksheets; add to ~/.bashrc
+```
+Photo quality dominates: shoot the page **flat and straight-on**, filling the frame,
+in even light. Angled photos and Chinese writing-grid (田字格) boxes wreck segmentation
+no matter the settings — a better photo beats any tuning. Sanity-check Tesseract
+directly, bypassing the agent, to separate an image problem from a config one:
+```bash
+tesseract "/sdcard/Download/page.jpg" stdout -l chi_sim+eng --psm 4
+```
 ```
 yh> read all the text in /sdcard/Download/receipt.png
 yh> what's the total on the receipt at /sdcard/Download/receipt.jpg
