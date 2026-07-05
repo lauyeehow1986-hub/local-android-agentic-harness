@@ -219,7 +219,7 @@ def test_screen_find_parses_tesseract(tmp_path, monkeypatch):
     # word box: "Login" at left=100 top=200 w=80 h=40 → center (140,220)
     monkeypatch.setattr(
         screen, "_tesseract_tsv",
-        lambda p, min_conf=40: [{"text": "Login", "left": 100, "top": 200, "width": 80, "height": 40, "conf": 90}],
+        lambda p, lang="eng", min_conf=40: [{"text": "Login", "left": 100, "top": 200, "width": 80, "height": 40, "conf": 90}],
     )
     out = _reg()["find_on_screen"].fn({"text": "login"}, ctx)
     assert "(140,220)" in out

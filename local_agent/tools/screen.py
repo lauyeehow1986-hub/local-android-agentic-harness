@@ -74,9 +74,9 @@ def screenshot(args: dict[str, Any], ctx: ToolContext) -> str:
     return out
 
 
-def _tesseract_tsv(image_path: str, min_conf: float = 40.0):
+def _tesseract_tsv(image_path: str, lang: str = "eng", min_conf: float = 40.0):
     """Return word boxes [{text,left,top,width,height,conf}] via Tesseract, or None
-    if tesseract isn't installed."""
+    if tesseract isn't installed. `lang` e.g. "eng" or "chi_sim+eng"."""
     exe = shutil.which("tesseract")
     if not exe:
         return None
@@ -84,7 +84,7 @@ def _tesseract_tsv(image_path: str, min_conf: float = 40.0):
         base = Path(td) / "o"
         try:
             subprocess.run(
-                [exe, image_path, str(base), "--psm", "11", "tsv"],
+                [exe, image_path, str(base), "-l", lang, "--psm", "11", "tsv"],
                 capture_output=True, text=True, timeout=120,
             )
         except Exception:  # noqa: BLE001
@@ -121,7 +121,8 @@ def _locate(ctx: ToolContext, target: str):
     shot = screenshot({"path": str(_default_shot())}, ctx)
     if not shot.endswith(".png"):
         return None, shot  # error string
-    rows = _tesseract_tsv(shot)
+    lang = getattr(ctx.config, "tesseract_lang", "eng")
+    rows = _tesseract_tsv(shot, lang)
     if rows is None:
         return None, "tesseract not installed: `pkg install tesseract`"
     tl = target.lower()

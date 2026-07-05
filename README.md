@@ -272,7 +272,7 @@ your hands by design.
 | `AGENT_MAX_IMAGE_PX` | `1024` | downscale longest image side (needs Pillow; 0 = off) |
 | `AGENT_PDF_OCR_MAX_PAGES` | `5` | pages to render + OCR for scanned PDFs |
 | `AGENT_OCR_ENGINE` | `auto` | `auto`/`tesseract`/`vision` for reading text |
-| `AGENT_TESSERACT_LANG` | `eng` | Tesseract language(s), e.g. `eng+chi_sim` |
+| `AGENT_TESSERACT_LANG` | `eng` | Tesseract language(s), e.g. `chi_sim+eng` (install the traineddata — see below) |
 | `AGENT_WHISPER_BACKEND` | `auto` | `auto`/`whisper`/`whispercpp`/`faster` |
 | `AGENT_WHISPER_MODEL` | `base` | model for openai/faster-whisper (tiny…large) |
 | `AGENT_WHISPER_CPP_MODEL` | _(unset)_ | path to a ggml model for whisper.cpp |
@@ -316,6 +316,12 @@ Optional backends (the harness degrades gracefully without them):
     more accurate than a small vision model, which *invents digits* on receipts. The LLM
     then answers your question over the real OCR text. Tune with `AGENT_OCR_ENGINE`
     (`auto`|`tesseract`|`vision`), `AGENT_TESSERACT_LANG` (e.g. `eng`), `AGENT_TESSERACT_PSM`.
+    **Other languages (e.g. Chinese):** download the traineddata, then set the lang —
+    ```bash
+    curl -L -o "$PREFIX/share/tessdata/chi_sim.traineddata" \
+      https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata
+    export AGENT_TESSERACT_LANG=chi_sim+eng    # applies to images, PDF OCR, and on-screen OCR
+    ```
   - **Describing a scene / visual Q&A: the vision model** — `ollama pull moondream` (or a
     small Qwen2.5-VL/Qwen3-VL). Loaded on demand, unloaded right after (`keep_alive=0`) so
     it never sits in RAM beside the 4B; set `OLLAMA_MAX_LOADED_MODELS=1` to be sure.

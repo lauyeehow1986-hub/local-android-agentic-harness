@@ -86,8 +86,17 @@ pip install Pillow                   # preprocessing (grayscale/contrast/upscale
 ollama pull moondream                # vision model, for describing scenes / VQA
 ```
 `analyze_image` auto-picks **Tesseract** for reading text (a small vision model
-*invents digits* on receipts) and the **vision model** for describing a scene. For
-other languages: `AGENT_TESSERACT_LANG=eng+chi_sim` (install the lang data first).
+*invents digits* on receipts) and the **vision model** for describing a scene.
+
+**Chinese (or other languages):** install the language data, then set the lang env var.
+```bash
+cd "$PREFIX/share/tessdata"
+curl -LO https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata   # Simplified
+curl -LO https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_tra.traineddata   # Traditional (optional)
+tesseract --list-langs                       # should now list chi_sim
+export AGENT_TESSERACT_LANG=chi_sim+eng       # mixed Chinese + English (good for SG); add to ~/.bashrc
+```
+`chi_sim+eng` also applies to `analyze_pdf` OCR and on-screen OCR (`find_on_screen`).
 ```
 yh> read all the text in /sdcard/Download/receipt.png
 yh> what's the total on the receipt at /sdcard/Download/receipt.jpg
