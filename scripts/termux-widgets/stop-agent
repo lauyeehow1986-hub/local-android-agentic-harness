@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# KILLSWITCH — halts any screen automation immediately. Every tap/type/step
+# checks this file before acting. Bind to a Termux:Widget button for a one-tap
+# physical killswitch on your home screen.
+mkdir -p "$HOME/.local_agent"
+touch "$HOME/.local_agent/STOP"
+command -v termux-notification >/dev/null 2>&1 && \
+  termux-notification --title "local-agent" --content "🔴 KILLSWITCH set — automation halted"
+echo "killswitch set: $HOME/.local_agent/STOP"

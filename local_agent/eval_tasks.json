@@ -1,0 +1,62 @@
+[
+  {
+    "id": "vault-search-recurrent",
+    "task": "What did I note about recurrent events?",
+    "expect_tool": "vault_search",
+    "expect_keywords": []
+  },
+  {
+    "id": "vault-list-daily",
+    "task": "List the notes in my Daily folder.",
+    "expect_tool": "vault_list",
+    "expect_keywords": []
+  },
+  {
+    "id": "daily-append",
+    "task": "Add a daily note that I deployed sg-bus-tracker v10.13 today.",
+    "expect_tool": "request_approval",
+    "expect_keywords": []
+  },
+  {
+    "id": "rephrase-email",
+    "task": "Rephrase this more politely: 'send me the file now'.",
+    "expect_tool": "rephrase",
+    "expect_keywords": []
+  },
+  {
+    "id": "web-fact",
+    "task": "What is the capital of France?",
+    "expect_tool": null,
+    "expect_keywords": ["paris"]
+  },
+  {
+    "id": "web-search-news",
+    "task": "Search the web for the latest on the OMOP CDM standard.",
+    "expect_tool": "web_search",
+    "expect_keywords": []
+  },
+  {
+    "id": "pdf-summarize",
+    "task": "Summarize the PDF at /sdcard/Download/paper.pdf.",
+    "expect_tool": "analyze_pdf",
+    "expect_keywords": []
+  },
+  {
+    "id": "analyze-csv",
+    "task": "Analyze the dataset at /sdcard/Download/data.csv and tell me the row count.",
+    "expect_tool": "analyze_data",
+    "expect_keywords": []
+  },
+  {
+    "id": "html-report",
+    "task": "Make an HTML report titled 'Weekly' with one section 'Status: green' at /sdcard/Download/weekly.html.",
+    "expect_tool": "request_approval",
+    "expect_keywords": []
+  },
+  {
+    "id": "no-tool-needed",
+    "task": "What is 12 times 11?",
+    "expect_tool": null,
+    "expect_keywords": ["132"]
+  }
+]

@@ -1,0 +1,88 @@
+# browser-bridge — on-device JS rendering for Termux
+
+Playwright's **Python** wheel doesn't build on Termux, but its **Node** driver
+(`playwright-core`) works when pointed at Termux's **system Chromium**. This tiny
+HTTP server wraps that into the same API `local_agent`'s `web_scrape(render=true)`
+already speaks (`POST /content {"url":...}` → rendered HTML), so the phone can
+render JS-heavy pages **fully on-device** — no LAN box required.
+
+Approach based on the pattern in
+[github.com/Jobians/playwright-termux](https://github.com/Jobians/playwright-termux).
+
+## Setup (Termux)
+
+```bash
+# 1. Node + Termux's Chromium (from the x11 repo)
+pkg install -y nodejs x11-repo
+pkg install -y chromium
+
+# 2. Find the Chromium binary path
+command -v chromium-browser || command -v chromium
+
+# 3. Install the bridge's one dependency
+cd scripts/browser-bridge
+npm install                       # pulls playwright-core (JS, no browser download)
+
+# 4. Run it (set CHROMIUM_PATH if step 2 showed a different path)
+CHROMIUM_PATH="$(command -v chromium-browser || command -v chromium)" node server.js &
+```
+
+## Point the agent at it
+
+```bash
+export AGENT_BROWSER_REMOTE_URL=http://127.0.0.1:3000
+python -m local_agent.main
+```
+
+```
+yh> scrape https://a-js-heavy-site.com with rendering and summarize the main points
+```
+
+The agent calls `web_scrape` with `render=true`, which POSTs to this bridge; the
+bridge drives headless Chromium and returns the rendered HTML.
+
+## Endpoints
+
+- `POST /content {"url":...}` → rendered HTML (used by `web_scrape render=true`).
+- `POST /actions {"steps":[...]}` → interactive automation (used by the `browser` tool).
+  Steps: `navigate` · `read` · `fill` · `click` · `select` · `wait` · `screenshot` · `content`.
+- `GET /health` → `ok`.
+
+## Persistent session (logging in)
+
+The bridge uses a **persistent Chromium profile** (`BROWSER_PROFILE_DIR`, default
+`~/.local_agent/chromium-profile`), so a login survives across calls and restarts.
+The agent can log in with steps (filling a username/password it's given — use a
+**throwaway account**, never your main credentials). Treat the profile dir like a
+password: anyone who can read it is logged in as that account. Delete it to log out:
+`rm -rf ~/.local_agent/chromium-profile`.
+
+## Ordering on a site (e.g. foodpanda) — how the guardrail works
+
+The agent can browse → search → add to cart → select **cash-on-delivery** if offered.
+The **harness** (not this bridge) forces a confirmation before any "place order / pay /
+checkout" step — see `local_agent/approval.py` (`web_steps_need_confirm`). So even in
+`AUTONOMY=full`, the final commit shows you the cart and asks y/n. If only card/online
+payment is available, the agent stops and hands back to you. Use a throwaway account
+with **no saved card** so the worst case is "wrong items in a cart."
+
+## Caveats (read before relying on this)
+
+- **RAM.** Chromium + the resident 4B model on an 8 GB phone is tight — a heavy page
+  plus Ollama can push into swap (the thing that already cripples decode speed). On the
+  12 GB variant it's more comfortable. If it thrashes, prefer a **LAN-box browserless**
+  (`AGENT_BROWSER_REMOTE_URL=http://<lan-ip>:3000`) instead.
+- **Chromium install is large** (hundreds of MB) and the upstream Termux-Playwright
+  pattern is early-stage; treat as experimental.
+- This bridge does **render-a-URL** only (the common "read this dynamic page" case). For
+  interactive click/fill flows, run the harness's `browser` tool on a desktop.
+- Keep `--no-sandbox` — Android has no user namespaces for Chromium's sandbox. The
+  server also passes `--single-process --no-zygote` (Termux Chromium can't fork the
+  multi-process model) and waits on `domcontentloaded` + a settle delay rather than
+  `networkidle` (which aborts on Termux). Tune the delay with `RENDER_SETTLE_MS`
+  (default 1500).
+- **`Unsupported platform: android`**: recent Termux Node (v26+) reports
+  `process.platform === 'android'`, which current playwright-core rejects at startup.
+  `server.js` works around this by spoofing `process.platform` to `'linux'` before
+  requiring playwright-core (we supply Chromium via `executablePath`, so no browser
+  download happens). If you adapt the script, keep that spoof at the very top.

@@ -1,0 +1,37 @@
+# Runtime: stdlib-only. The harness talks to Ollama over HTTP via urllib, and
+# all v1 tools (vault, web_search/scrape, generation, shell, git) use the
+# standard library. Keep this lean — Termux/ARM wheels are painful.
+
+# --- Dev / test only ---
+pytest>=7.0
+
+# --- Optional, install only if you enable the heavy tools ---
+# PDF reading (analyze_pdf):
+#   Termux:  pip install pypdf          # pure-Python text extraction
+#   Desktop: pip install pymupdf        # most robust (text + render); does NOT
+#                                       # build on Termux/aarch64 — skip it there
+#
+# Scanned/encrypted PDF OCR fallback — a renderer + a vision model:
+#   Termux:  pkg install poppler && pip install pdf2image   # installable on-device
+#   Desktop: pip install pymupdf
+#   plus a vision model: ollama pull moondream
+#
+# Browser tool (Playwright) — heavy on Termux; typically run on the LAN box:
+#   pip install playwright && playwright install chromium
+# playwright>=1.40
+#
+# Vision (analyze_image) is served by Ollama (pull a small VL model such as
+# `moondream`). No Python package is required, but Pillow enables auto-downscaling
+# of large photos (less RAM / latency):
+#   pip install Pillow
+# Pillow>=10.0
+#
+# transcribe (meeting speech-to-text) — install ONE Whisper backend:
+#   whisper.cpp (best for Termux): whisper-cli/whisper-cpp/main on PATH +
+#     AGENT_WHISPER_CPP_MODEL pointing at a ggml model file
+#   or: pip install openai-whisper
+#   or: pip install faster-whisper
+# Non-WAV audio also needs ffmpeg (`pkg install ffmpeg`).
+# Speaker diarization (transcribe/meeting_notes diarize=true) — heavy, run on a
+# desktop/LAN box, not the phone:
+#   pip install whisperx   # + HF_TOKEN env for pyannote models
